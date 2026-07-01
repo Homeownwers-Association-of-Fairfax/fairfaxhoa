@@ -1,0 +1,3311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fairfax Homeowners Association</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- ═══════════════════════════════════════════════════
+     SUPABASE CONFIGURATION — shared by reservations & documents
+════════════════════════════════════════════════════ -->
+<script>
+  const SUPABASE_URL = 'https://yvfdktnhllqycuniccyb.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2ZmRrdG5obGxxeWN1bmljY3liIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzU2NjUsImV4cCI6MjA5ODM1MTY2NX0.RO4pOvRJ0tyhocBVK5bep07poyGO-zgOkEmuiiOhgI4';
+
+  let adminSession = null;
+
+  async function adminSignIn(email, password) {
+    const res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error_description || err.msg || 'Invalid email or password.');
+    }
+    adminSession = await res.json();
+  }
+
+  async function adminSignOut() {
+    if (adminSession) {
+      try {
+        await fetch(SUPABASE_URL + '/auth/v1/logout', {
+          method: 'POST',
+          headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + adminSession.access_token }
+        });
+      } catch(e) {}
+    }
+    adminSession = null;
+  }
+
+  function adminHideAllDashboards() {
+    [
+      ['boardAdminLoginBox','boardAdminDash','boardAdminPw','boardAdminLoginErr'],
+      ['docsAdminLoginBox','docsAdminDash','docsAdminPw','docsAdminLoginErr'],
+      ['newsAdminLoginBox','newsAdminDash','newsAdminPw','newsAdminLoginErr'],
+      ['resAdminLoginBox','resAdminDash','resAdminPw','resAdminLoginErr']
+    ].forEach(([loginBox, dash, pw, err]) => {
+      const d = document.getElementById(dash); const l = document.getElementById(loginBox);
+      const p = document.getElementById(pw); const e = document.getElementById(err);
+      if (d) d.style.display = 'none'; if (l) l.style.display = 'block';
+      if (p) p.value = ''; if (e) e.style.display = 'none';
+    });
+  }
+
+  async function sbFetch(path, options = {}) {
+    const url = SUPABASE_URL + '/rest/v1/' + path;
+    const token = adminSession ? adminSession.access_token : SUPABASE_ANON_KEY;
+    const headers = {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json',
+      'Prefer': options.prefer || 'return=representation',
+      ...options.headers
+    };
+    const res = await fetch(url, { ...options, headers });
+    if (!res.ok) { const txt = await res.text(); throw new Error('Supabase error: ' + res.status + ' ' + txt); }
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json') && res.status !== 204) return res.json();
+    return null;
+  }
+
+  async function sbUpload(bucket, filePath, file) {
+    const url = SUPABASE_URL + '/storage/v1/object/' + bucket + '/' + filePath;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + (adminSession ? adminSession.access_token : SUPABASE_ANON_KEY),
+        'Content-Type': file.type || 'application/pdf'
+      },
+      body: file
+    });
+    if (!res.ok) { const txt = await res.text(); throw new Error('Upload error: ' + res.status + ' ' + txt); }
+    return res.json();
+  }
+
+  function sbPublicUrl(bucket, filePath) {
+    return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + filePath;
+  }
+
+  async function sbDeleteFile(bucket, filePath) {
+    const url = SUPABASE_URL + '/storage/v1/object/' + bucket + '/' + filePath;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (adminSession ? adminSession.access_token : SUPABASE_ANON_KEY) }
+    });
+    return res.ok;
+  }
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy: #1B3A5C;
+    --navy-light: #254d7a;
+    --navy-dark: #122840;
+    --sage: #7A9E7E;
+    --sage-light: #a8c4ab;
+    --sage-bg: #f0f5f0;
+    --amber: #D4882A;
+    --amber-light: #f5a83a;
+    --parchment: #F8F6F1;
+    --warm-white: #FFFFFF;
+    --text-dark: #1a2530;
+    --text-mid: #3d5166;
+    --text-muted: #6b7f8e;
+    --border: #dde3e8;
+    --border-light: #eef1f4;
+    --shadow-sm: 0 1px 4px rgba(27,58,92,0.08);
+    --shadow-md: 0 4px 16px rgba(27,58,92,0.10);
+    --shadow-lg: 0 8px 32px rgba(27,58,92,0.14);
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--parchment);
+    color: var(--text-dark);
+    font-size: 16px;
+    line-height: 1.7;
+  }
+
+  h1, h2, h3, h4 { font-family: 'Playfair Display', Georgia, serif; line-height: 1.25; }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--navy);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+  }
+
+  .nav-inner {
+    max-width: 1160px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    height: 64px;
+  }
+
+  .nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+  }
+
+  .nav-crest {
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+  }
+
+  .nav-brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+  }
+
+  .nav-brand-text span:first-child {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.02em;
+  }
+
+  .nav-brand-text span:last-child {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--sage-light);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    list-style: none;
+  }
+
+  .nav-links a {
+    display: block;
+    padding: 0.45rem 0.9rem;
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.82);
+    text-decoration: none;
+    border-radius: 6px;
+    transition: color 0.18s, background 0.18s;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  .nav-links a:hover { color: #fff; background: rgba(255,255,255,0.10); }
+
+  .nav-links .nav-cta a {
+    background: var(--amber);
+    color: #fff;
+    padding: 0.45rem 1rem;
+    font-weight: 600;
+  }
+
+  .nav-links .nav-cta a:hover { background: var(--amber-light); }
+
+  .nav-toggle {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 8px;
+  }
+
+  .nav-toggle span {
+    display: block;
+    width: 22px;
+    height: 2px;
+    background: #fff;
+    border-radius: 2px;
+    transition: 0.2s;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    background: var(--navy);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .hero-illustration {
+    width: 100%;
+    display: block;
+  }
+
+  .hero-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    width: 100%;
+    padding: 1rem 2rem;
+  }
+
+  .hero-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--sage-light);
+    margin-bottom: 0.75rem;
+  }
+
+  .hero h1 {
+    font-size: clamp(2rem, 5vw, 3.4rem);
+    color: #fff;
+    margin-bottom: 0.75rem;
+    text-shadow: 0 2px 20px rgba(0,0,0,0.3);
+  }
+
+  .hero-tagline {
+    font-size: clamp(1rem, 2vw, 1.2rem);
+    color: rgba(255,255,255,0.8);
+    max-width: 520px;
+    margin: 0 auto 1.75rem;
+    font-weight: 300;
+  }
+
+  .hero-btns {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 0.7rem 1.6rem;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.18s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-amber {
+    background: var(--amber);
+    color: #fff;
+  }
+
+  .btn-amber:hover { background: var(--amber-light); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+
+  .btn-outline-white {
+    background: transparent;
+    color: #fff;
+    border: 2px solid rgba(255,255,255,0.55);
+  }
+
+  .btn-outline-white:hover { background: rgba(255,255,255,0.12); border-color: #fff; }
+
+  .btn-navy {
+    background: var(--navy);
+    color: #fff;
+  }
+
+  .btn-navy:hover { background: var(--navy-light); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+
+  /* ── QUICK LINKS STRIP ── */
+  .quick-links {
+    background: var(--warm-white);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .quick-links-inner {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0;
+  }
+
+  .quick-link-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 1.1rem 1.5rem;
+    color: var(--text-mid);
+    text-decoration: none;
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: color 0.15s, background 0.15s;
+    border-right: 1px solid var(--border-light);
+  }
+
+  .quick-link-item:last-child { border-right: none; }
+  .quick-link-item:hover { color: var(--navy); background: var(--parchment); }
+
+  .quick-link-item svg { width: 18px; height: 18px; stroke: var(--amber); flex-shrink: 0; }
+
+  /* ── LAYOUT ── */
+  .page-section { display: none; }
+  .page-section.active { display: block; }
+
+  .container {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+
+  .section {
+    padding: 4rem 0;
+  }
+
+  .section-sm { padding: 2.5rem 0; }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+
+  .section-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--sage);
+    margin-bottom: 0.5rem;
+  }
+
+  .section-title {
+    font-size: clamp(1.6rem, 3vw, 2.2rem);
+    color: var(--navy);
+    margin-bottom: 0.75rem;
+  }
+
+  .section-subtitle {
+    color: var(--text-muted);
+    max-width: 560px;
+    margin: 0 auto;
+    font-size: 15px;
+  }
+
+  /* ── CARDS ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .card {
+    background: var(--warm-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-light);
+    overflow: hidden;
+    transition: box-shadow 0.2s, transform 0.2s;
+  }
+
+  .card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+  .card-header {
+    background: var(--navy);
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .card-icon {
+    width: 40px;
+    height: 40px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .card-icon svg { width: 20px; height: 20px; stroke: #fff; }
+
+  .card-header h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    font-family: 'Playfair Display', serif;
+  }
+
+  .card-body { padding: 1.25rem 1.5rem; }
+
+  .card-body p { font-size: 14px; color: var(--text-muted); line-height: 1.65; }
+
+  /* ── ANNOUNCEMENTS ── */
+  .announcement-list { display: flex; flex-direction: column; gap: 1.25rem; }
+
+  .announcement-item {
+    background: var(--warm-white);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-light);
+    padding: 1.5rem;
+    display: flex;
+    gap: 1.25rem;
+    align-items: flex-start;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.2s;
+  }
+
+  .announcement-item:hover { box-shadow: var(--shadow-md); }
+
+  .announcement-date {
+    min-width: 52px;
+    text-align: center;
+    background: var(--navy);
+    border-radius: 8px;
+    padding: 0.5rem 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .announcement-date .day {
+    display: block;
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1;
+  }
+
+  .announcement-date .month {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sage-light);
+    margin-top: 2px;
+  }
+
+  .announcement-content h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem;
+    color: var(--navy);
+    margin-bottom: 0.3rem;
+  }
+
+  .announcement-content p { font-size: 14px; color: var(--text-muted); }
+
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 0.4rem;
+  }
+
+  .badge-amber { background: #fef3e2; color: #9a5f0a; }
+  .badge-sage { background: #e8f3e9; color: #3d6b40; }
+  .badge-navy { background: #e8edf3; color: #1B3A5C; }
+
+  /* ── BOARD MEMBERS ── */
+  .board-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .board-card {
+    background: var(--warm-white);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    padding: 2rem 1.5rem;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.2s, transform 0.2s;
+  }
+
+  .board-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+  .board-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--navy);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #fff;
+    border: 3px solid var(--sage-light);
+  }
+
+  .board-card h4 {
+    font-size: 1rem;
+    color: var(--navy);
+    margin-bottom: 0.2rem;
+  }
+
+  .board-position {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sage);
+    margin-bottom: 0.5rem;
+  }
+
+  .board-card p { font-size: 13px; color: var(--text-muted); }
+
+  /* ── DOCUMENTS ── */
+  .doc-category { margin-bottom: 2.5rem; }
+
+  .doc-category-title {
+    font-size: 1.1rem;
+    color: var(--navy);
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--sage);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .doc-category-title svg { width: 18px; height: 18px; stroke: var(--sage); }
+
+  .doc-list { display: flex; flex-direction: column; gap: 0.6rem; }
+
+  .doc-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--warm-white);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 0.85rem 1.1rem;
+    text-decoration: none;
+    color: var(--text-dark);
+    transition: all 0.18s;
+    font-size: 14px;
+  }
+
+  .doc-item:hover { border-color: var(--navy); background: #f0f4f8; box-shadow: var(--shadow-sm); }
+
+  .doc-item svg { width: 18px; height: 18px; stroke: var(--amber); flex-shrink: 0; }
+
+  .doc-item-meta { margin-left: auto; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+  /* ── AMENITIES ── */
+  .amenity-tabs {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .amenity-tab {
+    padding: 0.6rem 1.4rem;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    background: var(--warm-white);
+    color: var(--text-mid);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+
+  .amenity-tab.active, .amenity-tab:hover {
+    border-color: var(--navy);
+    background: var(--navy);
+    color: #fff;
+  }
+
+  .amenity-panel { display: none; }
+  .amenity-panel.active { display: block; }
+
+  .amenity-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: start;
+  }
+
+  .amenity-info { }
+
+  .amenity-info h3 {
+    font-size: 1.5rem;
+    color: var(--navy);
+    margin-bottom: 1rem;
+  }
+
+  .amenity-info p { color: var(--text-muted); font-size: 15px; margin-bottom: 1rem; }
+
+  .info-box {
+    background: var(--warm-white);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .info-box h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sage);
+    margin-bottom: 0.6rem;
+  }
+
+  .info-box ul { list-style: none; }
+
+  .info-box ul li {
+    font-size: 14px;
+    color: var(--text-mid);
+    padding: 0.25rem 0;
+    padding-left: 1.2rem;
+    position: relative;
+  }
+
+  .info-box ul li::before {
+    content: '›';
+    position: absolute;
+    left: 0;
+    color: var(--amber);
+    font-weight: 700;
+  }
+
+  .amenity-visual {
+    background: var(--navy);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    aspect-ratio: 4/3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── FORM ── */
+  .form-card {
+    background: var(--warm-white);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-sm);
+    padding: 2.5rem;
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  .form-grid { display: grid; gap: 1.25rem; }
+  .form-grid-2 { grid-template-columns: 1fr 1fr; }
+
+  .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+
+  .form-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-mid);
+    letter-spacing: 0.02em;
+  }
+
+  .form-group label .req { color: var(--amber); }
+
+  .form-control {
+    width: 100%;
+    padding: 0.7rem 1rem;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    color: var(--text-dark);
+    background: var(--parchment);
+    transition: border-color 0.18s, box-shadow 0.18s;
+    outline: none;
+  }
+
+  .form-control:focus {
+    border-color: var(--navy);
+    box-shadow: 0 0 0 3px rgba(27,58,92,0.12);
+    background: #fff;
+  }
+
+  textarea.form-control { resize: vertical; min-height: 120px; }
+
+  .form-hint { font-size: 12px; color: var(--text-muted); }
+
+  .form-submit {
+    margin-top: 0.5rem;
+  }
+
+  .btn-full { width: 100%; text-align: center; padding: 0.85rem 1.6rem; font-size: 15px; }
+
+  .form-success {
+    display: none;
+    background: #e8f3e9;
+    border: 1px solid #a8c4ab;
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    color: #2d5730;
+    font-size: 14px;
+    text-align: center;
+    margin-top: 1rem;
+  }
+
+  /* ── CONTACT ── */
+  .contact-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: 3rem;
+    align-items: start;
+  }
+
+  .contact-info-box {
+    background: var(--navy);
+    border-radius: var(--radius-lg);
+    padding: 2.5rem;
+    color: #fff;
+  }
+
+  .contact-info-box h3 {
+    font-size: 1.4rem;
+    color: #fff;
+    margin-bottom: 1.5rem;
+  }
+
+  .contact-detail {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 1.5rem;
+  }
+
+  .contact-detail svg { width: 20px; height: 20px; stroke: var(--sage-light); flex-shrink: 0; margin-top: 2px; }
+
+  .contact-detail div { }
+
+  .contact-detail .contact-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sage-light);
+    margin-bottom: 0.2rem;
+  }
+
+  .contact-detail .contact-value { font-size: 14px; color: rgba(255,255,255,0.88); }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--navy-dark);
+    color: rgba(255,255,255,0.7);
+    padding: 3rem 0 1.5rem;
+    margin-top: 4rem;
+  }
+
+  .footer-inner {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+
+  .footer-top {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .footer-brand p {
+    font-size: 13px;
+    line-height: 1.7;
+    margin-top: 1rem;
+    max-width: 240px;
+  }
+
+  .footer-col h5 {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    color: #fff;
+    margin-bottom: 1rem;
+    font-weight: 700;
+  }
+
+  .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .footer-col ul li a {
+    font-size: 13px;
+    color: rgba(255,255,255,0.6);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  .footer-col ul li a:hover { color: #fff; }
+
+  .footer-divider {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 1.25rem;
+  }
+
+  .footer-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* ── ABOUT PAGE ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3rem;
+    align-items: center;
+  }
+
+  .feature-list { list-style: none; display: flex; flex-direction: column; gap: 0.75rem; }
+
+  .feature-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 15px;
+    color: var(--text-mid);
+  }
+
+  .feature-list li svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--sage);
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.5rem;
+    margin: 3rem 0;
+  }
+
+  .stat-card {
+    background: var(--warm-white);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .stat-card .stat-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--navy);
+    display: block;
+    line-height: 1;
+  }
+
+  .stat-card .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 0.4rem; }
+
+  /* ── HERO SVG ILLUSTRATION ── */
+  .hero-wrapper { position: relative; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .footer-top { grid-template-columns: 1fr 1fr; }
+    .amenity-content { grid-template-columns: 1fr; }
+    .amenity-visual { display: none; }
+    .contact-layout { grid-template-columns: 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 700px) {
+    .nav-links { display: none; position: absolute; top: 64px; left: 0; right: 0; background: var(--navy-dark); flex-direction: column; gap: 0; padding: 1rem 0; z-index: 99; }
+    .nav-links.open { display: flex; }
+    .nav-links a { border-radius: 0; padding: 0.75rem 1.5rem; }
+    .nav-toggle { display: flex; }
+    .quick-link-item { padding: 0.9rem 0.9rem; font-size: 12px; }
+    .form-grid-2 { grid-template-columns: 1fr; }
+    .footer-top { grid-template-columns: 1fr; }
+    .footer-bottom { flex-direction: column; text-align: center; }
+    .section { padding: 2.5rem 0; }
+    .form-card { padding: 1.5rem; }
+
+    /* Hero: give the banner real height on mobile so the title/tagline/buttons
+       have room and never get covered by the sticky nav above them. */
+    .hero { min-height: 420px; display: flex; align-items: center; justify-content: center; }
+    .hero-illustration { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+    .hero-content { position: relative; top: auto; left: auto; transform: none; padding: 2rem 1.25rem; }
+    .hero h1 { font-size: 1.7rem; margin-bottom: 0.6rem; }
+    .hero-eyebrow { margin-bottom: 0.5rem; }
+    .hero-tagline { font-size: 0.95rem; margin-bottom: 1.25rem; }
+  }
+
+  @media (max-width: 420px) {
+    .hero { min-height: 380px; }
+    .hero h1 { font-size: 1.45rem; }
+  }
+
+  /* ── ILLUSTRATED NEIGHBORHOOD SVG backgrounds ── */
+  .pool-illustration, .tennis-illustration { width: 100%; height: 100%; }
+
+  /* ── DIVIDER ── */
+  .sage-divider {
+    height: 4px;
+    background: linear-gradient(90deg, var(--sage) 0%, var(--amber) 50%, var(--sage) 100%);
+    border: none;
+    margin: 0;
+  }
+
+  /* ── RESERVATIONS / DOCS FUNCTIONAL UI ── */
+  .fn-tab-bar { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 1.75rem; flex-wrap: wrap; }
+  .fn-tab-btn { padding: .55rem 1.25rem; font-size: 13px; font-weight: 500; color: var(--text-muted); border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; font-family: 'Inter', sans-serif; transition: color .18s; }
+  .fn-tab-btn.active { color: var(--navy); border-bottom-color: var(--navy); font-weight: 600; }
+  .fn-tab-content { display: none; }
+  .fn-tab-content.active { display: block; }
+
+  .fn-card { background: var(--warm-white); border-radius: var(--radius-lg); border: 1px solid var(--border-light); box-shadow: var(--shadow-sm); padding: 1.5rem; margin-bottom: 1.5rem; }
+  .fn-card-title { font-size: 1rem; color: var(--navy); margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; font-family: 'Playfair Display', serif; }
+  .fn-card-title svg { width: 16px; height: 16px; stroke: var(--sage); flex-shrink: 0; }
+
+  .fn-alert { border-radius: var(--radius); padding: .9rem 1.1rem; font-size: 13px; margin-bottom: 1rem; display: none; align-items: flex-start; gap: .65rem; }
+  .fn-alert.show { display: flex; }
+  .fn-alert svg { width: 17px; height: 17px; flex-shrink: 0; margin-top: 1px; }
+  .fn-alert-error { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+  .fn-alert-error svg { stroke: #991b1b; }
+  .fn-alert-success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+  .fn-alert-success svg { stroke: #166534; }
+
+  .fn-court-cards { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-bottom: .9rem; }
+  @media (max-width: 480px) { .fn-court-cards { grid-template-columns: 1fr; } }
+  .fn-court-card { background: var(--warm-white); border-radius: var(--radius); border: 2px solid var(--border-light); padding: 1rem; cursor: pointer; transition: border-color .18s, background .18s; position: relative; }
+  .fn-court-card.selected { border-color: var(--navy); background: #f0f4f8; }
+  .fn-court-card.taken { border-color: #fca5a5; background: #fee2e2; cursor: not-allowed; opacity: .7; }
+  .fn-court-card h4 { font-size: .88rem; color: var(--navy); margin-bottom: .2rem; font-family: 'Playfair Display', serif; }
+  .fn-court-card p { font-size: 12px; }
+  .fn-court-radio { position: absolute; top: .85rem; right: .85rem; accent-color: var(--navy); width: 15px; height: 15px; }
+
+  .fn-slots { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+  .fn-slot { padding: .3rem .65rem; border-radius: 6px; font-size: 11px; font-weight: 500; border: 1.5px solid; white-space: nowrap; }
+  .fn-slot-avail { background: #f0fdf4; border-color: #86efac; color: #166534; }
+  .fn-slot-booked { background: #fee2e2; border-color: #fca5a5; color: #991b1b; text-decoration: line-through; opacity: .7; }
+  .fn-slot-pending { background: #fef9c3; border-color: #fde047; color: #854d0e; }
+
+  .fn-table-wrap { overflow-x: auto; }
+  .fn-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .fn-table th { background: var(--navy); color: #fff; padding: .55rem .75rem; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+  .fn-table td { padding: .6rem .75rem; border-bottom: 1px solid var(--border-light); vertical-align: top; color: var(--text-mid); }
+  .fn-table tr:hover td { background: #f8fafc; }
+
+  .fn-badge { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+  .fn-badge-pending { background: #fef9c3; color: #854d0e; }
+  .fn-badge-confirmed { background: #f0fdf4; color: #166534; }
+  .fn-badge-declined { background: #fee2e2; color: #991b1b; }
+
+  .fn-empty { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); font-size: 13px; }
+  .fn-empty svg { width: 32px; height: 32px; stroke: var(--border); display: block; margin: 0 auto .65rem; }
+
+  .fn-spinner { width: 18px; height: 18px; border: 2.5px solid var(--border); border-top-color: var(--navy); border-radius: 50%; animation: fn-spin .7s linear infinite; display: inline-block; vertical-align: middle; margin-right: .4rem; }
+  @keyframes fn-spin { to { transform: rotate(360deg); } }
+
+  .fn-status-select { font-size: 11px; font-family: 'Inter', sans-serif; padding: .2rem .45rem; border-radius: 5px; border: 1px solid var(--border); background: var(--parchment); color: var(--text-dark); cursor: pointer; }
+
+  .fn-date-nav { display: flex; align-items: center; gap: .65rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
+  .fn-date-nav label { font-size: 12px; font-weight: 600; color: var(--text-mid); }
+  .fn-date-input { padding: .4rem .75rem; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: var(--parchment); color: var(--text-dark); outline: none; }
+  .fn-date-input:focus { border-color: var(--navy); }
+
+  .fn-day-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem; }
+  @media (max-width: 560px) { .fn-day-grid { grid-template-columns: 1fr; } }
+  .fn-court-col-title { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--sage); margin-bottom: .5rem; }
+  .fn-time-block { border-radius: 8px; padding: .65rem .85rem; margin-bottom: .4rem; font-size: 12px; }
+  .fn-time-avail { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+  .fn-time-pending { background: #fef9c3; border: 1px solid #fde047; color: #854d0e; }
+  .fn-time-confirmed { background: #dbeafe; border: 1px solid #93c5fd; color: #1e3a8a; }
+  .fn-time-declined { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+
+  .fn-admin-bar { background: var(--navy-dark); border-radius: var(--radius); padding: .8rem 1.1rem; display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: .5rem; }
+  .fn-admin-bar span { font-size: 12px; color: rgba(255,255,255,.7); }
+
+  .fn-config-warning { background: #fef9c3; border: 1px solid #fde047; border-radius: var(--radius); padding: 1rem 1.25rem; font-size: 13px; color: #854d0e; margin-bottom: 1.5rem; display: none; }
+  .fn-config-warning.show { display: block; }
+
+  .fn-search-bar { display: flex; gap: .75rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .fn-search-bar input { flex: 1; min-width: 200px; padding: .65rem 1rem; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: var(--warm-white); outline: none; }
+  .fn-search-bar input:focus { border-color: var(--navy); }
+  .fn-search-bar select { padding: .65rem 1rem; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; background: var(--warm-white); outline: none; cursor: pointer; }
+
+  .fn-doc-row { display: flex; align-items: center; gap: 10px; background: var(--warm-white); border: 1px solid var(--border-light); border-radius: var(--radius); padding: .8rem 1.1rem; transition: all .18s; font-size: 13px; margin-bottom: .5rem; }
+  .fn-doc-row:hover { border-color: var(--navy); background: #f0f4f8; }
+  .fn-doc-row svg { width: 16px; height: 16px; stroke: var(--amber); flex-shrink: 0; }
+  .fn-doc-row a { color: var(--text-dark); text-decoration: none; font-weight: 500; flex: 1; }
+  .fn-doc-row a:hover { color: var(--navy); text-decoration: underline; }
+  .fn-doc-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .fn-doc-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 13px; padding: 2px 6px; }
+  .fn-doc-del:hover { background: #fee2e2; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav role="navigation" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a href="#" class="nav-brand" onclick="showPage('home')">
+      <!-- Crest SVG -->
+      <svg class="nav-crest" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="19,3 35,12 35,26 19,35 3,26 3,12" fill="#7A9E7E" stroke="none"/>
+        <polygon points="19,7 31,14 31,24 19,31 7,24 7,14" fill="#1B3A5C" stroke="none"/>
+        <text x="19" y="23" text-anchor="middle" fill="#D4882A" font-size="12" font-weight="bold" font-family="Georgia,serif">F</text>
+      </svg>
+      <div class="nav-brand-text">
+        <span>Fairfax</span>
+        <span>Homeowners Association</span>
+      </div>
+    </a>
+    <button class="nav-toggle" aria-label="Toggle navigation" onclick="toggleNav()">
+      <span></span><span></span><span></span>
+    </button>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="#" onclick="showPage('home');return false;">Home</a></li>
+      <li><a href="#" onclick="showPage('about');return false;">About</a></li>
+      <li><a href="#" onclick="showPage('board');return false;">Board</a></li>
+      <li><a href="#" onclick="showPage('documents');return false;">Documents</a></li>
+      <li><a href="#" onclick="showPage('news');return false;">News</a></li>
+      <li><a href="#" onclick="showPage('amenities');return false;">Amenities</a></li>
+      <li class="nav-cta"><a href="#" onclick="showPage('contact');return false;">Contact Us</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════
+     PAGE: HOME
+══════════════════════════════════ -->
+<section class="page-section active" id="page-home">
+
+  <!-- Hero -->
+  <div class="hero hero-wrapper">
+    <svg class="hero-illustration" viewBox="0 0 1160 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Illustrated Fairfax neighborhood street scene">
+      <!-- Sky -->
+      <rect width="1160" height="480" fill="#1B3A5C"/>
+      <!-- Stars / subtle dots -->
+      <circle cx="80" cy="60" r="1.5" fill="rgba(255,255,255,0.4)"/>
+      <circle cx="240" cy="35" r="1" fill="rgba(255,255,255,0.3)"/>
+      <circle cx="620" cy="28" r="1.5" fill="rgba(255,255,255,0.4)"/>
+      <circle cx="900" cy="50" r="1" fill="rgba(255,255,255,0.3)"/>
+      <circle cx="1050" cy="42" r="1.5" fill="rgba(255,255,255,0.35)"/>
+      <!-- Moon -->
+      <circle cx="1090" cy="70" r="28" fill="#e8eef5"/>
+      <circle cx="1102" cy="62" r="22" fill="#1B3A5C"/>
+
+      <!-- Ground -->
+      <rect x="0" y="340" width="1160" height="140" fill="#122840"/>
+      <!-- Road -->
+      <rect x="0" y="360" width="1160" height="80" fill="#0e1e2e"/>
+      <!-- Road lines -->
+      <rect x="0" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="120" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="240" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="360" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="480" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="600" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="720" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="840" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="960" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <rect x="1080" y="397" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+      <!-- Sidewalk -->
+      <rect x="0" y="340" width="1160" height="20" fill="#1e3d5c"/>
+
+      <!-- Trees -->
+      <rect x="50" y="260" width="8" height="80" fill="#4a3520" rx="2"/>
+      <ellipse cx="54" cy="248" rx="26" ry="30" fill="#3d6b40"/>
+      <ellipse cx="54" cy="240" rx="18" ry="22" fill="#4a8050"/>
+
+      <rect x="190" y="280" width="8" height="60" fill="#4a3520" rx="2"/>
+      <ellipse cx="194" cy="268" rx="22" ry="26" fill="#3d6b40"/>
+
+      <rect x="440" y="270" width="8" height="70" fill="#4a3520" rx="2"/>
+      <ellipse cx="444" cy="258" rx="24" ry="28" fill="#4a8050"/>
+      <ellipse cx="444" cy="248" rx="16" ry="20" fill="#5a9460"/>
+
+      <rect x="720" y="265" width="8" height="75" fill="#4a3520" rx="2"/>
+      <ellipse cx="724" cy="252" rx="26" ry="30" fill="#3d6b40"/>
+
+      <rect x="1000" y="275" width="8" height="65" fill="#4a3520" rx="2"/>
+      <ellipse cx="1004" cy="263" rx="22" ry="26" fill="#4a8050"/>
+      <ellipse cx="1004" cy="254" rx="14" ry="18" fill="#5a9460"/>
+
+      <!-- House 1 (left, colonial) -->
+      <rect x="80" y="240" width="120" height="100" fill="#254d7a"/>
+      <polygon points="80,240 140,190 200,240" fill="#1B3A5C"/>
+      <!-- chimney -->
+      <rect x="160" y="196" width="12" height="28" fill="#122840"/>
+      <!-- windows -->
+      <rect x="95" y="258" width="26" height="26" rx="2" fill="#d4882a" opacity="0.85"/>
+      <rect x="158" y="258" width="26" height="26" rx="2" fill="#d4882a" opacity="0.6"/>
+      <!-- door -->
+      <rect x="120" y="298" width="28" height="42" rx="3" fill="#122840"/>
+      <circle cx="144" cy="322" r="2.5" fill="#D4882A"/>
+      <!-- window glow -->
+      <rect x="95" y="258" width="26" height="26" rx="2" fill="#ffd87a" opacity="0.18"/>
+      <rect x="158" y="258" width="26" height="26" rx="2" fill="#ffd87a" opacity="0.12"/>
+
+      <!-- House 2 (colonial with porch) -->
+      <rect x="280" y="230" width="140" height="110" fill="#1e4570"/>
+      <polygon points="280,230 350,170 420,230" fill="#163352"/>
+      <rect x="316" y="170" width="14" height="32" fill="#0e2236"/>
+      <!-- porch columns -->
+      <rect x="285" y="295" width="130" height="10" fill="#163352"/>
+      <rect x="295" y="270" width="6" height="35" fill="#122840"/>
+      <rect x="340" y="270" width="6" height="35" fill="#122840"/>
+      <rect x="385" y="270" width="6" height="35" fill="#122840"/>
+      <!-- windows lit -->
+      <rect x="296" y="250" width="28" height="28" rx="2" fill="#ffd87a" opacity="0.7"/>
+      <rect x="366" y="250" width="28" height="28" rx="2" fill="#ffd87a" opacity="0.5"/>
+      <!-- door -->
+      <rect x="333" y="280" width="30" height="45" rx="3" fill="#0e2236"/>
+      <circle cx="358" cy="306" r="2.5" fill="#D4882A"/>
+
+      <!-- House 3 (Cape Cod) -->
+      <rect x="520" y="256" width="110" height="84" fill="#7A9E7E" opacity="0.85"/>
+      <polygon points="520,256 575,210 630,256" fill="#5a7d5e"/>
+      <rect x="558" y="211" width="10" height="24" fill="#4a6050"/>
+      <!-- dormers -->
+      <rect x="547" y="226" width="20" height="18" fill="#7A9E7E" opacity="0.9"/>
+      <polygon points="547,226 557,218 567,226" fill="#5a7d5e"/>
+      <!-- windows -->
+      <rect x="530" y="272" width="22" height="22" rx="2" fill="#ffd87a" opacity="0.8"/>
+      <rect x="593" y="272" width="22" height="22" rx="2" fill="#ffd87a" opacity="0.55"/>
+      <!-- door -->
+      <rect x="555" y="304" width="24" height="36" rx="3" fill="#3d5028"/>
+      <circle cx="575" cy="324" r="2" fill="#D4882A"/>
+
+      <!-- House 4 (Two-story) -->
+      <rect x="750" y="220" width="130" height="120" fill="#254d7a"/>
+      <polygon points="750,220 815,168 880,220" fill="#163352"/>
+      <rect x="800" y="168" width="12" height="30" fill="#0e2236"/>
+      <!-- second floor windows -->
+      <rect x="764" y="236" width="22" height="22" rx="2" fill="#ffd87a" opacity="0.7"/>
+      <rect x="844" y="236" width="22" height="22" rx="2" fill="#ffd87a" opacity="0.6"/>
+      <!-- first floor windows -->
+      <rect x="764" y="276" width="22" height="22" rx="2" fill="#ffd87a" opacity="0.8"/>
+      <rect x="844" y="276" width="22" height="22" rx="2" fill="#ffd87a" opacity="0.4"/>
+      <!-- door -->
+      <rect x="795" y="292" width="28" height="48" rx="3" fill="#0e2236"/>
+      <circle cx="819" cy="318" r="2.5" fill="#D4882A"/>
+      <!-- garage -->
+      <rect x="880" y="268" width="50" height="72" fill="#1B3A5C"/>
+      <rect x="884" y="272" width="42" height="52" rx="2" fill="#122840"/>
+
+      <!-- House 5 (far right) -->
+      <rect x="1020" y="250" width="110" height="90" fill="#1e4570"/>
+      <polygon points="1020,250 1075,200 1130,250" fill="#122840"/>
+      <rect x="1060" y="200" width="10" height="26" fill="#0e2236"/>
+      <rect x="1034" y="266" width="24" height="24" rx="2" fill="#ffd87a" opacity="0.7"/>
+      <rect x="1092" y="266" width="24" height="24" rx="2" fill="#ffd87a" opacity="0.5"/>
+      <rect x="1055" y="302" width="26" height="38" rx="3" fill="#0e2236"/>
+
+      <!-- Streetlights -->
+      <rect x="320" y="290" width="5" height="70" fill="#2a5080" rx="1"/>
+      <ellipse cx="322" cy="290" rx="15" ry="5" fill="#3d6b90"/>
+      <ellipse cx="322" cy="289" rx="8" ry="3" fill="#ffd87a" opacity="0.7"/>
+
+      <rect x="880" y="285" width="5" height="75" fill="#2a5080" rx="1"/>
+      <ellipse cx="882" cy="285" rx="15" ry="5" fill="#3d6b90"/>
+      <ellipse cx="882" cy="284" rx="8" ry="3" fill="#ffd87a" opacity="0.7"/>
+
+      <!-- Mailboxes -->
+      <rect x="265" y="338" width="10" height="16" rx="1" fill="#2a5080"/>
+      <rect x="268" y="334" width="10" height="8" rx="2" fill="#254d7a"/>
+
+      <rect x="500" y="337" width="10" height="17" rx="1" fill="#2a5080"/>
+      <rect x="503" y="333" width="10" height="8" rx="2" fill="#254d7a"/>
+    </svg>
+
+    <div class="hero-content">
+      <p class="hero-eyebrow">Welcome to our neighborhood</p>
+      <h1>Fairfax<br>Homeowners Association</h1>
+      <p class="hero-tagline">A welcoming community of neighbors, shared spaces, and the pride of home.</p>
+      <div class="hero-btns">
+        <a href="#" class="btn btn-amber" onclick="showPage('news');return false;">Latest Announcements</a>
+        <a href="#" class="btn btn-outline-white" onclick="showPage('contact');return false;">Contact the Board</a>
+      </div>
+    </div>
+  </div>
+
+  <hr class="sage-divider">
+
+  <!-- Quick Links -->
+  <div class="quick-links">
+    <div class="quick-links-inner">
+      <a href="#" class="quick-link-item" onclick="showPage('documents');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        HOA Documents
+      </a>
+      <a href="#" class="quick-link-item" onclick="showPage('amenities');showAmenity('tennis');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+        Reserve a Tennis Court
+      </a>
+      <a href="#" class="quick-link-item" onclick="showPage('amenities');showAmenity('pool');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12 C5 8, 7 16, 10 12 S15 8, 18 12 S21 16, 22 12"/><path d="M2 20 C5 16, 7 24, 10 20 S15 16, 18 20 S21 24, 22 20"/></svg>
+        Pool Information
+      </a>
+      <a href="#" class="quick-link-item" onclick="showPage('board');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        HOA Board
+      </a>
+      <a href="#" class="quick-link-item" onclick="showPage('contact');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Contact Us
+      </a>
+    </div>
+  </div>
+
+  <!-- Announcements -->
+  <div class="section">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-eyebrow">Stay informed</p>
+        <h2 class="section-title">Latest Announcements</h2>
+        <p class="section-subtitle">Important updates and news from your HOA board</p>
+      </div>
+      <div class="announcement-list" id="homeAnnouncementsList">
+        <div class="fn-empty"><span class="fn-spinner"></span>Loading announcements…</div>
+      </div>
+      <div style="text-align:center;margin-top:2rem;">
+        <a href="#" class="btn btn-navy" onclick="showPage('news');return false;">View All Announcements</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Community cards -->
+  <div style="background:var(--navy);padding:4rem 0;">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-eyebrow" style="color:var(--sage-light);">Life in Fairfax</p>
+        <h2 class="section-title" style="color:#fff;">Everything your community offers</h2>
+        <p class="section-subtitle" style="color:rgba(255,255,255,0.65);">From amenities to governance, Fairfax HOA is here for you</p>
+      </div>
+      <div class="card-grid">
+        <div class="card" onclick="showPage('amenities');showAmenity('pool');" style="cursor:pointer;">
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12 C5 8, 7 16, 10 12 S15 8, 18 12 S21 16, 22 12"/><path d="M2 20 C5 16, 7 24, 10 20 S15 16, 18 20 S21 24, 22 20"/></svg>
+            </div>
+            <h3>Community Pool</h3>
+          </div>
+          <div class="card-body"><p>Enjoy our sparkling community pool all summer long. Open Memorial Day through Labor Day with designated lap swim and family swim hours.</p></div>
+        </div>
+        <div class="card" onclick="showPage('amenities');showAmenity('tennis');" style="cursor:pointer;">
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </div>
+            <h3>Tennis Courts</h3>
+          </div>
+          <div class="card-body"><p>Two hard courts available year-round. Reserve your court online through our simple reservation request form.</p></div>
+        </div>
+        <div class="card" onclick="showPage('documents');" style="cursor:pointer;">
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            </div>
+            <h3>Documents & Forms</h3>
+          </div>
+          <div class="card-body"><p>Access CC&Rs, bylaws, meeting minutes, budgets, and all official HOA forms in our organized document library.</p></div>
+        </div>
+        <div class="card" onclick="showPage('board');" style="cursor:pointer;">
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            </div>
+            <h3>Meet the Board</h3>
+          </div>
+          <div class="card-body"><p>Your volunteer board members work year-round to maintain and improve the Fairfax community. Meet the people who represent you.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════════
+     PAGE: ABOUT
+══════════════════════════════════ -->
+<section class="page-section" id="page-about">
+  <div class="section" style="background:var(--navy);padding:3rem 0;">
+    <div class="container">
+      <p class="section-eyebrow" style="color:var(--sage-light);text-align:center;">Our neighborhood</p>
+      <h2 class="section-title" style="color:#fff;text-align:center;">About Fairfax</h2>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="container">
+      <div class="stat-grid">
+        <div class="stat-card"><span class="stat-num">248</span><p class="stat-label">Homes in the community</p></div>
+        <div class="stat-card"><span class="stat-num">1987</span><p class="stat-label">Year established</p></div>
+        <div class="stat-card"><span class="stat-num">42</span><p class="stat-label">Acres of common area</p></div>
+        <div class="stat-card"><span class="stat-num">5</span><p class="stat-label">Board members</p></div>
+      </div>
+
+      <div class="two-col" style="margin-bottom:3rem;">
+        <div>
+          <p class="section-eyebrow">Community description</p>
+          <h2 class="section-title" style="font-size:1.7rem;">A place to call home</h2>
+          <p style="color:var(--text-muted);margin-bottom:1.25rem;">The Fairfax neighborhood is a well-established residential community featuring 248 single-family homes nestled among mature trees and landscaped common areas. Founded in 1987, Fairfax has grown into a close-knit community known for its pride of ownership, friendly neighbors, and exceptional amenities.</p>
+          <p style="color:var(--text-muted);">Our neighborhood offers a quiet, family-friendly atmosphere with convenient access to top-rated schools, shopping, dining, and major commuter routes — all while maintaining the character of a true community.</p>
+        </div>
+        <div style="background:var(--navy);border-radius:var(--radius-lg);padding:2.5rem;">
+          <h3 style="color:#fff;font-size:1.3rem;margin-bottom:1.25rem;">Neighborhood Amenities</h3>
+          <ul class="feature-list">
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style="color:rgba(255,255,255,0.82);">Community swimming pool with pool house</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style="color:rgba(255,255,255,0.82);">Two lighted tennis courts</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style="color:rgba(255,255,255,0.82);">Scenic walking paths and green spaces</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style="color:rgba(255,255,255,0.82);">Children's playground and picnic area</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style="color:rgba(255,255,255,0.82);">Professionally maintained landscaping</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style="color:rgba(255,255,255,0.82);">Holiday lighting and seasonal decorations</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);padding-top:3rem;">
+        <p class="section-eyebrow">How we're governed</p>
+        <h2 class="section-title" style="font-size:1.7rem;margin-bottom:1rem;">About the HOA</h2>
+        <div class="two-col">
+          <div>
+            <p style="color:var(--text-muted);margin-bottom:1rem;">The Fairfax Homeowners Association is a nonprofit organization that manages and maintains the community's common areas, enforces community standards, and fosters neighborly relationships throughout the neighborhood.</p>
+            <p style="color:var(--text-muted);">The HOA is governed by a five-member Board of Directors elected annually by homeowners. The board meets monthly and welcomes resident participation and input.</p>
+          </div>
+          <div>
+            <div class="info-box">
+              <h4>Annual dues</h4>
+              <ul>
+                <li>Annual HOA assessment: $900 per household</li>
+                <li>Due annually on January 1st</li>
+                <li>Covers maintenance, insurance, and amenities</li>
+              </ul>
+            </div>
+            <div class="info-box">
+              <h4>Board meetings</h4>
+              <ul>
+                <li>Second Tuesday of each month, 7:00 PM</li>
+                <li>Fairfax Community Center, Room B</li>
+                <li>Open to all residents — all are welcome</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     PAGE: BOARD
+══════════════════════════════════ -->
+<section class="page-section" id="page-board">
+  <div class="section" style="background:var(--navy);padding:3rem 0;">
+    <div class="container" style="text-align:center;">
+      <p class="section-eyebrow" style="color:var(--sage-light);">Elected volunteers</p>
+      <h2 class="section-title" style="color:#fff;">HOA Board of Directors</h2>
+      <p style="color:rgba(255,255,255,0.65);max-width:520px;margin:0 auto;font-size:15px;">Your board members give their time to ensure Fairfax remains a great place to live. Board elections are held each November.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="container">
+
+      <div class="fn-config-warning" id="boardConfigWarning">
+        ⚠️ Supabase is not configured — board member data will not load. Contact the site administrator.
+      </div>
+
+      <div class="fn-tab-bar">
+        <button class="fn-tab-btn active" onclick="boardSwitchTab('view',this)">👥 Board Members</button>
+        <button class="fn-tab-btn" onclick="boardSwitchTab('admin',this)">⚙ Board Admin — Manage</button>
+      </div>
+
+      <!-- VIEW TAB -->
+      <div class="fn-tab-content active" id="board-tab-view">
+        <div class="board-grid" id="boardMembersList" style="margin-bottom:3rem;">
+          <div class="fn-empty" style="grid-column:1/-1"><span class="fn-spinner"></span>Loading board members…</div>
+        </div>
+
+        <div style="background:var(--parchment);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:2.5rem;max-width:600px;margin:0 auto;text-align:center;">
+          <h3 style="color:var(--navy);margin-bottom:0.75rem;font-size:1.25rem;">Reach the Board</h3>
+          <p style="color:var(--text-muted);font-size:14px;margin-bottom:1.25rem;">Questions, concerns, or just want to say hello? The board is always happy to hear from residents.</p>
+          <p style="margin-bottom:0.5rem;font-size:15px;"><strong>Email:</strong> <a href="mailto:alpharettafairfax@gmail.com" style="color:var(--navy);">alpharettafairfax@gmail.com</a></p>
+          <p style="font-size:15px;margin-bottom:1.5rem;"><strong>Meetings:</strong> 2nd Tuesday of each month, 7:00 PM</p>
+          <a href="#" class="btn btn-navy" onclick="showPage('contact');return false;">Send a Message</a>
+        </div>
+      </div>
+
+      <!-- ADMIN TAB -->
+      <div class="fn-tab-content" id="board-tab-admin">
+        <div id="boardAdminLoginBox" class="fn-card" style="max-width:360px;margin:0 auto;text-align:center">
+          <svg style="width:34px;height:34px;stroke:var(--navy);display:block;margin:0 auto .65rem" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <h3 style="margin-bottom:.35rem">Board Admin Login</h3>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:1.1rem">Add, edit, and remove board members</p>
+          <div class="form-group" style="text-align:left">
+            <label>Email</label>
+            <input type="email" class="form-control" id="boardAdminEmail" placeholder="Board email" onkeydown="if(event.key==='Enter')boardAdminLogin()">
+          </div>
+          <div class="form-group" style="text-align:left;margin-top:.6rem">
+            <label>Password</label>
+            <input type="password" class="form-control" id="boardAdminPw" placeholder="Password" onkeydown="if(event.key==='Enter')boardAdminLogin()">
+          </div>
+          <div id="boardAdminLoginErr" style="color:#991b1b;font-size:12px;margin:.4rem 0;display:none"></div>
+          <button class="btn btn-navy btn-full" onclick="boardAdminLogin()" style="margin-top:.4rem">Log In</button>
+        </div>
+
+        <div id="boardAdminDash" style="display:none">
+          <div class="fn-admin-bar">
+            <span>⚙ Board Admin — Manage Board Members</span>
+            <button class="btn btn-ghost btn-sm" onclick="boardAdminLogout()">Log out</button>
+          </div>
+
+          <div class="fn-card">
+            <h3 class="fn-card-title" id="boardFormTitle">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              Add a Board Member
+            </h3>
+            <div class="fn-alert fn-alert-error" id="boardFormErr">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span id="boardFormErrMsg"></span>
+            </div>
+            <div class="fn-alert fn-alert-success" id="boardFormSuccess">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <span id="boardFormSuccessMsg"></span>
+            </div>
+            <input type="hidden" id="boardEditId" value="">
+            <div class="form-grid form-grid-2">
+              <div class="form-group">
+                <label>Full Name <span class="req">*</span></label>
+                <input type="text" class="form-control" id="boardMemberName" placeholder="e.g. Margaret Holloway">
+              </div>
+              <div class="form-group">
+                <label>Position / Role <span class="req">*</span></label>
+                <input type="text" class="form-control" id="boardMemberPosition" placeholder="e.g. President">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Bio <span class="req">*</span></label>
+              <textarea class="form-control" id="boardMemberBio" placeholder="Brief description of this board member's role and background…" style="min-height:80px"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Sort Order</label>
+              <input type="number" class="form-control" id="boardMemberSortOrder" value="0" min="0" style="max-width:120px">
+              <span class="form-hint">Lower numbers appear first (0 = first)</span>
+            </div>
+            <div style="display:flex;gap:.6rem">
+              <button class="btn btn-amber" id="boardSubmitBtn" onclick="boardSubmit()" style="flex:1">Add Member</button>
+              <button class="btn btn-ghost" id="boardCancelEditBtn" onclick="boardCancelEdit()" style="display:none">Cancel Edit</button>
+            </div>
+          </div>
+
+          <div class="fn-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+              <h3 class="fn-card-title" style="margin-bottom:0">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+                Current Board Members
+              </h3>
+              <button class="btn btn-sage btn-sm" onclick="boardRefreshAdmin()">↻ Refresh</button>
+            </div>
+            <div id="boardAdminList"><div class="fn-empty"><span class="fn-spinner"></span>Loading…</div></div>
+          </div>
+
+          <div class="fn-card" style="background:var(--sage-bg);border-color:var(--sage-light);">
+            <h3 class="fn-card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Supabase Setup Required
+            </h3>
+            <p style="font-size:13px;color:var(--text-mid);margin-bottom:.75rem">This feature requires a <strong>board_members</strong> table in your Supabase project. Run this SQL once in the Supabase SQL editor:</p>
+            <pre style="background:var(--navy);color:#e8f3e9;padding:1rem;border-radius:var(--radius);font-size:11px;overflow-x:auto;line-height:1.6">CREATE TABLE board_members (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  name text NOT NULL,
+  position text NOT NULL,
+  bio text NOT NULL,
+  sort_order integer DEFAULT 0,
+  created timestamptz DEFAULT now()
+);
+ALTER TABLE board_members ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read" ON board_members FOR SELECT USING (true);
+CREATE POLICY "Anon insert" ON board_members FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anon update" ON board_members FOR UPDATE USING (true);
+CREATE POLICY "Anon delete" ON board_members FOR DELETE USING (true);</pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     PAGE: DOCUMENTS
+══════════════════════════════════ -->
+<section class="page-section" id="page-documents">
+  <div class="section" style="background:var(--navy);padding:3rem 0;">
+    <div class="container" style="text-align:center;">
+      <p class="section-eyebrow" style="color:var(--sage-light);">Resources</p>
+      <h2 class="section-title" style="color:#fff;">Documents &amp; Forms</h2>
+      <p style="color:rgba(255,255,255,0.65);max-width:480px;margin:0 auto;font-size:15px;">Access all official HOA documents, governing rules, and resident forms in one place.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="container">
+      <div style="max-width:820px;margin:0 auto;">
+
+        <div class="fn-config-warning" id="docsConfigWarning">
+          ⚠️ Supabase is not configured — the document library will not load. Contact the site administrator.
+        </div>
+
+        <!-- Sub-tabs: Browse vs Board Admin -->
+        <div class="fn-tab-bar">
+          <button class="fn-tab-btn active" onclick="docsSwitchTab('browse',this)">📁 Browse Documents</button>
+          <button class="fn-tab-btn" onclick="docsSwitchTab('admin',this)">⚙ Board Admin — Upload</button>
+        </div>
+
+        <!-- BROWSE TAB -->
+        <div class="fn-tab-content active" id="docs-tab-browse">
+          <div class="fn-search-bar">
+            <input type="text" id="docSearch" placeholder="Search documents…" oninput="docsRender()">
+            <select id="docCategoryFilter" onchange="docsRender()">
+              <option value="">All categories</option>
+              <option value="Governing Documents">Governing Documents</option>
+              <option value="Policies & Procedures">Policies &amp; Procedures</option>
+              <option value="Meeting Minutes">Meeting Minutes</option>
+              <option value="Budget & Financial">Budget &amp; Financial</option>
+              <option value="Downloadable Forms">Downloadable Forms</option>
+            </select>
+          </div>
+          <div id="docsListContainer"><div class="fn-empty"><span class="fn-spinner"></span>Loading documents…</div></div>
+        </div>
+
+        <!-- ADMIN TAB -->
+        <div class="fn-tab-content" id="docs-tab-admin">
+          <div id="docsAdminLoginBox" class="fn-card" style="max-width:360px;margin:0 auto;text-align:center">
+            <svg style="width:34px;height:34px;stroke:var(--navy);display:block;margin:0 auto .65rem" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <h3 style="margin-bottom:.35rem">Board Admin Login</h3>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:1.1rem">Upload and manage HOA documents</p>
+            <div class="form-group" style="text-align:left">
+              <label>Email</label>
+              <input type="email" class="form-control" id="docsAdminEmail" placeholder="Board email" onkeydown="if(event.key==='Enter')docsAdminLogin()">
+            </div>
+            <div class="form-group" style="text-align:left;margin-top:.6rem">
+              <label>Password</label>
+              <input type="password" class="form-control" id="docsAdminPw" placeholder="Password" onkeydown="if(event.key==='Enter')docsAdminLogin()">
+            </div>
+            <div id="docsAdminLoginErr" style="color:#991b1b;font-size:12px;margin:.4rem 0;display:none"></div>
+            <button class="btn btn-navy btn-full" onclick="docsAdminLogin()" style="margin-top:.4rem">Log In</button>
+          </div>
+
+          <div id="docsAdminDash" style="display:none">
+            <div class="fn-admin-bar">
+              <span>⚙ Board Admin — Document Management</span>
+              <button class="btn btn-ghost btn-sm" onclick="docsAdminLogout()">Log out</button>
+            </div>
+
+            <div class="fn-card">
+              <h3 class="fn-card-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Upload a Document
+              </h3>
+              <div class="fn-alert fn-alert-error" id="docUploadErr">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span id="docUploadErrMsg"></span>
+              </div>
+              <div class="fn-alert fn-alert-success" id="docUploadSuccess">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span id="docUploadSuccessMsg"></span>
+              </div>
+              <div class="form-group">
+                <label>Document title <span class="req">*</span></label>
+                <input type="text" class="form-control" id="docTitle" placeholder="e.g. June 2026 Board Meeting Minutes">
+              </div>
+              <div class="form-group">
+                <label>Category <span class="req">*</span></label>
+                <select class="form-control" id="docCategory">
+                  <option value="">Select a category…</option>
+                  <option value="Governing Documents">Governing Documents</option>
+                  <option value="Policies & Procedures">Policies &amp; Procedures</option>
+                  <option value="Meeting Minutes">Meeting Minutes</option>
+                  <option value="Budget & Financial">Budget &amp; Financial</option>
+                  <option value="Downloadable Forms">Downloadable Forms</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>File <span class="req">*</span></label>
+                <input type="file" class="form-control" id="docFile" accept=".pdf,.doc,.docx,.xls,.xlsx">
+                <span class="form-hint">PDF, Word, or Excel files</span>
+              </div>
+              <button class="btn btn-amber btn-full" id="docUploadBtn" onclick="docsUpload()">Upload Document</button>
+            </div>
+
+            <div class="fn-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+                <h3 class="fn-card-title" style="margin-bottom:0">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Manage All Documents
+                </h3>
+                <button class="btn btn-sage btn-sm" onclick="docsRefreshAdmin()">↻ Refresh</button>
+              </div>
+              <div id="docsAdminList"><div class="fn-empty"><span class="fn-spinner"></span>Loading…</div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     PAGE: NEWS
+══════════════════════════════════ -->
+<section class="page-section" id="page-news">
+  <div class="section" style="background:var(--navy);padding:3rem 0;">
+    <div class="container" style="text-align:center;">
+      <p class="section-eyebrow" style="color:var(--sage-light);">Keep up to date</p>
+      <h2 class="section-title" style="color:#fff;">News &amp; Announcements</h2>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="container" style="max-width:780px;">
+
+      <div class="fn-config-warning" id="newsConfigWarning">
+        ⚠️ Supabase is not configured — announcements will not load. Contact the site administrator.
+      </div>
+
+      <div class="fn-tab-bar">
+        <button class="fn-tab-btn active" onclick="newsSwitchTab('browse',this)">📰 All Announcements</button>
+        <button class="fn-tab-btn" onclick="newsSwitchTab('admin',this)">⚙ Board Admin — Post / Edit</button>
+      </div>
+
+      <!-- BROWSE TAB -->
+      <div class="fn-tab-content active" id="news-tab-browse">
+        <div class="announcement-list" id="newsFullList">
+          <div class="fn-empty"><span class="fn-spinner"></span>Loading announcements…</div>
+        </div>
+      </div>
+
+      <!-- ADMIN TAB -->
+      <div class="fn-tab-content" id="news-tab-admin">
+        <div id="newsAdminLoginBox" class="fn-card" style="max-width:360px;margin:0 auto;text-align:center">
+          <svg style="width:34px;height:34px;stroke:var(--navy);display:block;margin:0 auto .65rem" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <h3 style="margin-bottom:.35rem">Board Admin Login</h3>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:1.1rem">Post, edit, and delete announcements</p>
+          <div class="form-group" style="text-align:left">
+            <label>Email</label>
+            <input type="email" class="form-control" id="newsAdminEmail" placeholder="Board email" onkeydown="if(event.key==='Enter')newsAdminLogin()">
+          </div>
+          <div class="form-group" style="text-align:left;margin-top:.6rem">
+            <label>Password</label>
+            <input type="password" class="form-control" id="newsAdminPw" placeholder="Password" onkeydown="if(event.key==='Enter')newsAdminLogin()">
+          </div>
+          <div id="newsAdminLoginErr" style="color:#991b1b;font-size:12px;margin:.4rem 0;display:none"></div>
+          <button class="btn btn-navy btn-full" onclick="newsAdminLogin()" style="margin-top:.4rem">Log In</button>
+        </div>
+
+        <div id="newsAdminDash" style="display:none">
+          <div class="fn-admin-bar">
+            <span>⚙ Board Admin — Manage Announcements</span>
+            <button class="btn btn-ghost btn-sm" onclick="newsAdminLogout()">Log out</button>
+          </div>
+
+          <div class="fn-card">
+            <h3 class="fn-card-title" id="newsFormTitle">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              Post a New Announcement
+            </h3>
+            <div class="fn-alert fn-alert-error" id="newsFormErr">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span id="newsFormErrMsg"></span>
+            </div>
+            <div class="fn-alert fn-alert-success" id="newsFormSuccess">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <span id="newsFormSuccessMsg"></span>
+            </div>
+            <input type="hidden" id="newsEditId" value="">
+            <div class="form-grid form-grid-2">
+              <div class="form-group">
+                <label>Date <span class="req">*</span></label>
+                <input type="date" class="form-control" id="newsDate">
+              </div>
+              <div class="form-group">
+                <label>Category <span class="req">*</span></label>
+                <select class="form-control" id="newsCategory">
+                  <option value="Meeting Notice">Meeting Notice</option>
+                  <option value="Pool Update">Pool Update</option>
+                  <option value="Community" selected>Community</option>
+                  <option value="Reminder">Reminder</option>
+                  <option value="Board Update">Board Update</option>
+                  <option value="Community Event">Community Event</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Title <span class="req">*</span></label>
+              <input type="text" class="form-control" id="newsTitle" placeholder="e.g. Annual HOA Meeting – July 10th at 7:00 PM">
+            </div>
+            <div class="form-group">
+              <label>Body <span class="req">*</span></label>
+              <textarea class="form-control" id="newsBody" placeholder="Write the announcement details…" style="min-height:100px"></textarea>
+            </div>
+            <div style="display:flex;gap:.6rem">
+              <button class="btn btn-amber" id="newsSubmitBtn" onclick="newsSubmit()" style="flex:1">Post Announcement</button>
+              <button class="btn btn-ghost" id="newsCancelEditBtn" onclick="newsCancelEdit()" style="display:none">Cancel Edit</button>
+            </div>
+          </div>
+
+          <div class="fn-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+              <h3 class="fn-card-title" style="margin-bottom:0">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+                All Posted Announcements
+              </h3>
+              <button class="btn btn-sage btn-sm" onclick="newsRefreshAdmin()">↻ Refresh</button>
+            </div>
+            <div id="newsAdminList"><div class="fn-empty"><span class="fn-spinner"></span>Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     PAGE: AMENITIES
+══════════════════════════════════ -->
+<section class="page-section" id="page-amenities">
+  <div class="section" style="background:var(--navy);padding:3rem 0;">
+    <div class="container" style="text-align:center;">
+      <p class="section-eyebrow" style="color:var(--sage-light);">For residents</p>
+      <h2 class="section-title" style="color:#fff;">Community Amenities</h2>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="container">
+      <div class="amenity-tabs" id="amenityTabs">
+        <button class="amenity-tab active" onclick="showAmenity('pool')">🏊 Pool</button>
+        <button class="amenity-tab" onclick="showAmenity('tennis')">🎾 Tennis Courts</button>
+      </div>
+
+      <!-- Pool Panel -->
+      <div class="amenity-panel active" id="amenity-pool">
+        <div class="amenity-content">
+          <div class="amenity-info">
+            <h3>Community Pool</h3>
+            <p>Enjoy the Fairfax community pool, open each summer from Memorial Day weekend through Labor Day. The pool features a main pool, a shallow wading section, and a pool house with restrooms and changing facilities.</p>
+            <div class="info-box">
+              <h4>Pool Hours</h4>
+              <ul>
+                <li>8:00 AM – 9:00 PM</li>
+              </ul>
+            </div>
+            <div class="info-box">
+              <h4>Pool Rules</h4>
+              <ul>
+                <li>Children under 12 must be accompanied by an adult</li>
+                <li>No glass containers in the pool area</li>
+                <li>No diving in the shallow end</li>
+                <li>Pool may close for weather or maintenance</li>
+              </ul>
+            </div>
+            <div class="info-box">
+              <h4>Seasonal Information</h4>
+              <ul>
+                <li>Season opens: Memorial Day Weekend</li>
+                <li>Season closes: Labor Day</li>
+              </ul>
+            </div>
+          </div>
+          <div class="amenity-visual">
+            <img src="pool.JPG" alt="Fairfax community pool" style="width:100%;height:100%;object-fit:cover;">
+          </div>
+        </div>
+      </div>
+
+      <!-- Tennis Panel — LIVE RESERVATION SYSTEM -->
+      <div class="amenity-panel" id="amenity-tennis">
+
+        <div class="fn-config-warning" id="resConfigWarning">
+          ⚠️ Supabase is not configured — reservations will not save. Contact the site administrator.
+        </div>
+
+        <div class="amenity-content" style="margin-bottom:2rem;">
+          <div class="amenity-info">
+            <h3>Tennis Courts</h3>
+            <p>Fairfax features two freshly resurfaced hard courts, available to all residents year-round during daylight hours. Courts are equipped with lighting for evening play until 10:00 PM. Reservations and the live schedule below help avoid double bookings.</p>
+            <div class="info-box">
+              <h4>Court Rules</h4>
+              <ul>
+                <li>Residents only (guests permitted with resident present)</li>
+                <li>Proper tennis attire and non-marking shoes required</li>
+                <li>Maximum 90-minute play if others are waiting</li>
+                <li>No food or glass on the courts</li>
+                <li>Pets not permitted on court surfaces</li>
+              </ul>
+            </div>
+          </div>
+          <div class="amenity-visual">
+            <img src="tennis.JPG" alt="Fairfax tennis courts" style="width:100%;height:100%;object-fit:cover;">
+          </div>
+        </div>
+
+        <!-- Reservation sub-tabs -->
+        <div class="fn-tab-bar">
+          <button class="fn-tab-btn active" onclick="resSwitchTab('book',this)">📋 Reserve a Court</button>
+          <button class="fn-tab-btn" onclick="resSwitchTab('calendar',this)">📅 View Schedule</button>
+          <button class="fn-tab-btn" onclick="resSwitchTab('admin',this)">⚙ Board Admin</button>
+        </div>
+
+        <!-- BOOK TAB -->
+        <div class="fn-tab-content active" id="res-tab-book">
+          <div class="two-col">
+            <div>
+              <div class="fn-card">
+                <h3 class="fn-card-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Reserve a Court
+                </h3>
+                <div class="fn-alert fn-alert-error" id="resBookErr">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span id="resBookErrMsg"></span>
+                </div>
+                <div class="fn-alert fn-alert-success" id="resBookSuccess">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  <span id="resBookSuccessMsg"></span>
+                </div>
+                <div id="resBookForm">
+                  <div class="form-grid form-grid-2">
+                    <div class="form-group"><label>First name <span class="req">*</span></label><input type="text" class="form-control" id="res_fname" placeholder="Jane"></div>
+                    <div class="form-group"><label>Last name <span class="req">*</span></label><input type="text" class="form-control" id="res_lname" placeholder="Smith"></div>
+                  </div>
+                  <div class="form-grid form-grid-2">
+                    <div class="form-group"><label>Email <span class="req">*</span></label><input type="email" class="form-control" id="res_email" placeholder="jane@email.com"></div>
+                    <div class="form-group"><label>Phone</label><input type="tel" class="form-control" id="res_phone" placeholder="(770) 000-0000"></div>
+                  </div>
+                  <div class="form-group">
+                    <label>Street address <span class="req">*</span></label>
+                    <input type="text" class="form-control" id="res_addr" placeholder="123 Fairfax Drive, Alpharetta, GA">
+                    <span class="form-hint">Confirms Fairfax residency</span>
+                  </div>
+                  <div class="form-grid form-grid-2">
+                    <div class="form-group"><label>Date <span class="req">*</span></label><input type="date" class="form-control" id="res_date" onchange="resOnDateChange()"></div>
+                    <div class="form-group"><label>Duration</label>
+                      <select class="form-control" id="res_dur" onchange="resOnDateChange()">
+                        <option value="1">1 hour</option><option value="1.5">1.5 hours</option><option value="2">2 hours</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label>Start time <span class="req">*</span></label>
+                    <select class="form-control" id="res_time" onchange="resOnTimeChange()">
+                      <option value="">— pick a date first —</option>
+                    </select>
+                    <span class="form-hint" id="resTimeHint"></span>
+                  </div>
+                  <div class="form-group">
+                    <label>Court <span class="req">*</span></label>
+                    <div class="fn-court-cards">
+                      <div class="fn-court-card selected" id="resCard1" onclick="resSelectCourt('1')">
+                        <input type="radio" name="rescourt" value="1" class="fn-court-radio" checked id="resR1">
+                        <h4>🎾 Court 1</h4>
+                        <p id="resC1status" style="color:var(--sage)">Select date & time</p>
+                      </div>
+                      <div class="fn-court-card" id="resCard2" onclick="resSelectCourt('2')">
+                        <input type="radio" name="rescourt" value="2" class="fn-court-radio" id="resR2">
+                        <h4>🎾 Court 2</h4>
+                        <p id="resC2status" style="color:var(--sage)">Select date & time</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-group"><label>Players</label>
+                    <select class="form-control" id="res_players"><option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option></select>
+                  </div>
+                  <div class="form-group"><label>Notes</label><textarea class="form-control" id="res_notes" placeholder="Any additional notes?" style="min-height:65px"></textarea></div>
+                  <button class="btn btn-amber btn-full" id="resSubmitBtn" onclick="resSubmit()">Book Court</button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="fn-card">
+                <h3 class="fn-card-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  Today's Availability
+                </h3>
+                <div id="resAvailPreview"><div class="fn-empty"><span class="fn-spinner"></span>Loading schedule…</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CALENDAR TAB -->
+        <div class="fn-tab-content" id="res-tab-calendar">
+          <div class="fn-card">
+            <h3 class="fn-card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              Daily Schedule
+            </h3>
+            <div class="fn-date-nav">
+              <label>Date:</label>
+              <input type="date" class="fn-date-input" id="resCalDate" onchange="resRenderCalendar()">
+              <button class="btn btn-ghost btn-sm" onclick="resCalToday()">Today</button>
+              <button class="btn btn-ghost btn-sm" onclick="resShiftCal(-1)">‹ Prev</button>
+              <button class="btn btn-ghost btn-sm" onclick="resShiftCal(1)">Next ›</button>
+            </div>
+            <div id="resCalView"><div class="fn-empty"><span class="fn-spinner"></span>Loading…</div></div>
+          </div>
+          <div class="fn-card">
+            <h3 class="fn-card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+              All Upcoming Reservations
+            </h3>
+            <div class="fn-table-wrap" id="resUpcomingLog"><div class="fn-empty"><span class="fn-spinner"></span>Loading…</div></div>
+          </div>
+        </div>
+
+        <!-- ADMIN TAB -->
+        <div class="fn-tab-content" id="res-tab-admin">
+          <div id="resAdminLoginBox" class="fn-card" style="max-width:360px;margin:0 auto;text-align:center">
+            <svg style="width:34px;height:34px;stroke:var(--navy);display:block;margin:0 auto .65rem" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <h3 style="margin-bottom:.35rem">Board Admin Login</h3>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:1.1rem">Edit and manage court reservations</p>
+            <div class="form-group" style="text-align:left">
+              <label>Email</label>
+              <input type="email" class="form-control" id="resAdminEmail" placeholder="Board email" onkeydown="if(event.key==='Enter')resAdminLogin()">
+            </div>
+            <div class="form-group" style="text-align:left;margin-top:.6rem">
+              <label>Password</label>
+              <input type="password" class="form-control" id="resAdminPw" placeholder="Password" onkeydown="if(event.key==='Enter')resAdminLogin()">
+            </div>
+            <div id="resAdminLoginErr" style="color:#991b1b;font-size:12px;margin:.4rem 0;display:none"></div>
+            <button class="btn btn-navy btn-full" onclick="resAdminLogin()" style="margin-top:.4rem">Log In</button>
+          </div>
+          <div id="resAdminDash" style="display:none">
+            <div class="fn-admin-bar">
+              <span>⚙ Board Admin — Manage Reservations</span>
+              <div style="display:flex;gap:.5rem">
+                <button class="btn btn-danger btn-sm" onclick="resClearAllData()">Clear all data</button>
+                <button class="btn btn-ghost btn-sm" onclick="resAdminLogout()">Log out</button>
+              </div>
+            </div>
+            <div class="fn-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+                <h3 class="fn-card-title" style="margin-bottom:0">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+                  All Reservations
+                </h3>
+                <button class="btn btn-sage btn-sm" onclick="resRefreshAdmin()">↻ Refresh</button>
+              </div>
+              <div class="fn-table-wrap" id="resAdminLog"><div class="fn-empty"><span class="fn-spinner"></span>Loading…</div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     PAGE: CONTACT
+══════════════════════════════════ -->
+<section class="page-section" id="page-contact">
+  <div class="section" style="background:var(--navy);padding:3rem 0;">
+    <div class="container" style="text-align:center;">
+      <p class="section-eyebrow" style="color:var(--sage-light);">Get in touch</p>
+      <h2 class="section-title" style="color:#fff;">Contact Us</h2>
+      <p style="color:rgba(255,255,255,0.65);max-width:480px;margin:0 auto;font-size:15px;">Have a question or concern? We'd love to hear from you. The board typically responds within 2 business days.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="container">
+      <div class="contact-layout">
+        <div>
+          <div class="contact-info-box">
+            <h3>HOA Contact Information</h3>
+            <div class="contact-detail">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              <div>
+                <div class="contact-label">General Email</div>
+                <div class="contact-value">alpharettafairfax@gmail.com</div>
+              </div>
+            </div>
+            <div class="contact-detail">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              <div>
+                <div class="contact-label">Board Email</div>
+                <div class="contact-value">alpharettafairfax@gmail.com</div>
+              </div>
+            </div>
+            <div class="contact-detail">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <div>
+                <div class="contact-label">Mailing Address</div>
+                <div class="contact-value">Fairfax HOA<br>P.O. Box 1248<br>Alpharetta, GA 30005</div>
+              </div>
+            </div>
+            <div class="contact-detail">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <div>
+                <div class="contact-label">Board Meetings</div>
+                <div class="contact-value">2nd Tuesday of each month<br>7:00 PM – Community Center, Room B</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="form-card" style="max-width:none;">
+            <h3 style="color:var(--navy);margin-bottom:1.5rem;font-size:1.3rem;">Send us a message</h3>
+            <div class="form-grid" id="contactFormFields">
+              <div class="fn-alert fn-alert-error" id="contactFormErr">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span id="contactFormErrMsg"></span>
+              </div>
+              <div class="form-grid form-grid-2">
+                <div class="form-group">
+                  <label>First name <span class="req">*</span></label>
+                  <input type="text" class="form-control" id="c_fname" placeholder="First name">
+                </div>
+                <div class="form-group">
+                  <label>Last name <span class="req">*</span></label>
+                  <input type="text" class="form-control" id="c_lname" placeholder="Last name">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Email address <span class="req">*</span></label>
+                <input type="email" class="form-control" id="c_email" placeholder="your@email.com">
+              </div>
+              <div class="form-group">
+                <label>Street address (optional)</label>
+                <input type="text" class="form-control" id="c_addr" placeholder="123 Fairfax Drive">
+              </div>
+              <div class="form-group">
+                <label>Subject <span class="req">*</span></label>
+                <select class="form-control" id="c_subject">
+                  <option value="">Select a topic...</option>
+                  <option>General inquiry</option>
+                  <option>Maintenance request</option>
+                  <option>Rule or violation concern</option>
+                  <option>Amenity question</option>
+                  <option>Architectural review</option>
+                  <option>Billing / dues question</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Message <span class="req">*</span></label>
+                <textarea class="form-control" id="c_message" placeholder="How can we help you?"></textarea>
+              </div>
+              <div class="form-submit">
+                <button class="btn btn-amber btn-full" id="contactSubmitBtn" onclick="submitContactForm()">Send Message</button>
+              </div>
+            </div>
+            <div class="form-success" id="contactSuccess">
+              <strong>Message sent!</strong> Thank you for reaching out. A board member will respond to your email within 2 business days.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <svg width="34" height="34" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="19,3 35,12 35,26 19,35 3,26 3,12" fill="#7A9E7E"/>
+            <polygon points="19,7 31,14 31,24 19,31 7,24 7,14" fill="#1B3A5C"/>
+            <text x="19" y="23" text-anchor="middle" fill="#D4882A" font-size="12" font-weight="bold" font-family="Georgia,serif">F</text>
+          </svg>
+          <span style="font-family:'Playfair Display',serif;font-size:16px;color:#fff;font-weight:700;">Fairfax HOA</span>
+        </div>
+        <p>Serving the Fairfax community since 1990. A neighborhood of neighbors.</p>
+      </div>
+      <div class="footer-col">
+        <h5>Quick Links</h5>
+        <ul>
+          <li><a href="#" onclick="showPage('home');return false;">Home</a></li>
+          <li><a href="#" onclick="showPage('about');return false;">About Fairfax</a></li>
+          <li><a href="#" onclick="showPage('board');return false;">HOA Board</a></li>
+          <li><a href="#" onclick="showPage('news');return false;">Announcements</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Amenities</h5>
+        <ul>
+          <li><a href="#" onclick="showPage('amenities');showAmenity('pool');return false;">Community Pool</a></li>
+          <li><a href="#" onclick="showPage('amenities');showAmenity('tennis');return false;">Tennis Courts</a></li>
+          <li><a href="#" onclick="showPage('amenities');showAmenity('tennis');return false;">Reserve a Court</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Resources</h5>
+        <ul>
+          <li><a href="#" onclick="showPage('documents');return false;">Documents &amp; Forms</a></li>
+          <li><a href="#" onclick="showPage('contact');return false;">Contact the Board</a></li>
+          <li><a href="mailto:alpharettafairfax@gmail.com">alpharettafairfax@gmail.com</a></li>
+        </ul>
+      </div>
+    </div>
+    <hr class="footer-divider">
+    <div class="footer-bottom">
+      <span>© 2026 Fairfax Homeowners Association. All rights reserved.</span>
+      <span>P.O. Box 1248, Alpharetta, GA 30005</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  function showPage(id) {
+    document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+    const target = document.getElementById('page-' + id);
+    if (target) {
+      target.classList.add('active');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    const nl = document.getElementById('navLinks');
+    if (nl) nl.classList.remove('open');
+  }
+
+  function showAmenity(id) {
+    document.querySelectorAll('.amenity-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.amenity-tab').forEach(t => t.classList.remove('active'));
+    const panel = document.getElementById('amenity-' + id);
+    if (panel) panel.classList.add('active');
+    const tabs = document.querySelectorAll('.amenity-tab');
+    tabs.forEach(t => {
+      if ((id === 'pool' && t.textContent.includes('Pool')) ||
+          (id === 'tennis' && t.textContent.includes('Tennis'))) {
+        t.classList.add('active');
+      }
+    });
+  }
+
+  function toggleNav() {
+    const nl = document.getElementById('navLinks');
+    if (nl) nl.classList.toggle('open');
+  }
+
+  // ═══════════════════════════════════════════════════
+  // CONTACT FORM — sends real email via Formspree
+  // ═══════════════════════════════════════════════════
+  const FORMSPREE_ENDPOINT = 'https://formspree.io/f/xkolvoqb';
+
+  function contactSetErr(msg) {
+    document.getElementById('contactFormErr').classList.add('show');
+    document.getElementById('contactFormErrMsg').textContent = msg;
+  }
+  function contactClearErr() { document.getElementById('contactFormErr').classList.remove('show'); }
+
+  async function submitContactForm() {
+    contactClearErr();
+    const fname = document.getElementById('c_fname').value.trim();
+    const lname = document.getElementById('c_lname').value.trim();
+    const email = document.getElementById('c_email').value.trim();
+    const addr = document.getElementById('c_addr').value.trim();
+    const subject = document.getElementById('c_subject').value;
+    const message = document.getElementById('c_message').value.trim();
+
+    if (!fname || !lname) { contactSetErr('Please enter your full name.'); return; }
+    if (!email || !email.includes('@')) { contactSetErr('Please enter a valid email address.'); return; }
+    if (!subject) { contactSetErr('Please select a subject.'); return; }
+    if (!message) { contactSetErr('Please enter a message.'); return; }
+
+    if (!FORMSPREE_ENDPOINT || FORMSPREE_ENDPOINT === 'YOUR_FORMSPREE_ENDPOINT') {
+      contactSetErr('The contact form is not yet configured to send email. Please contact the HOA directly at alpharettafairfax@gmail.com.');
+      return;
+    }
+
+    const btn = document.getElementById('contactSubmitBtn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="fn-spinner"></span> Sending…';
+
+    try {
+      const res = await fetch(FORMSPREE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          name: fname + ' ' + lname,
+          email, address: addr, subject, message,
+          _subject: 'Fairfax HOA Contact Form: ' + subject
+        })
+      });
+      if (!res.ok) throw new Error('Formspree responded with status ' + res.status);
+
+      const form = document.getElementById('contactFormFields');
+      const success = document.getElementById('contactSuccess');
+      form.style.display = 'none';
+      success.style.display = 'block';
+    } catch (err) {
+      contactSetErr('There was a problem sending your message. Please try again, or email the board directly at alpharettafairfax@gmail.com.');
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════
+  // TENNIS RESERVATIONS — Supabase-backed, shared, live
+  // ═══════════════════════════════════════════════════
+  const RES_TIMES = ['7:00 AM','8:00 AM','9:00 AM','10:00 AM','11:00 AM','12:00 PM',
+                      '1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM'];
+  const resIsConfigured = SUPABASE_URL && SUPABASE_URL.indexOf('supabase.co') > -1;
+  let resSelectedCourt = '1';
+  let resCachedReservations = [];
+
+  if (!resIsConfigured) {
+    const w = document.getElementById('resConfigWarning');
+    if (w) w.classList.add('show');
+  }
+
+  async function getReservations(filters = '') {
+    if (!resIsConfigured) return [];
+    return sbFetch('reservations?order=date.asc,time.asc' + (filters ? '&' + filters : ''));
+  }
+  async function insertReservation(data) {
+    return sbFetch('reservations', { method: 'POST', body: JSON.stringify(data), prefer: 'return=representation' });
+  }
+  async function updateReservationStatus(id, status) {
+    return sbFetch('reservations?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ status }), prefer: 'return=minimal' });
+  }
+  async function deleteReservation(id) {
+    return sbFetch('reservations?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' });
+  }
+
+  function resTodayISO() { return new Date().toISOString().slice(0, 10); }
+  function resFmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function resFmtTS(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+  function resTimeToMin(t) {
+    const [time, ampm] = t.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + (m || 0);
+  }
+  function resHasConflict(reservations, date, court, time, durHours) {
+    const newStart = resTimeToMin(time);
+    const newEnd = newStart + durHours * 60;
+    return reservations.find(r =>
+      r.date === date && r.court_num === court && r.status !== 'Declined' &&
+      resTimeToMin(r.time) < newEnd && (resTimeToMin(r.time) + parseFloat(r.duration) * 60) > newStart
+    ) || null;
+  }
+
+  function resSwitchTab(id, btn) {
+    document.querySelectorAll('#amenity-tennis .fn-tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#amenity-tennis .fn-tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('res-tab-' + id).classList.add('active');
+    if (btn) btn.classList.add('active');
+    if (id === 'calendar') { resCalInit(); resRenderCalendar(); }
+    if (id === 'admin') {
+      if (adminSession) {
+        document.getElementById('resAdminLoginBox').style.display = 'none';
+        document.getElementById('resAdminDash').style.display = 'block';
+        resRefreshAdmin();
+      } else if (document.getElementById('resAdminDash').style.display !== 'none') {
+        resRefreshAdmin();
+      }
+    }
+  }
+
+  function resSelectCourt(n) {
+    resSelectedCourt = n;
+    document.getElementById('resCard1').className = 'fn-court-card' + (n === '1' ? ' selected' : '');
+    document.getElementById('resCard2').className = 'fn-court-card' + (n === '2' ? ' selected' : '');
+    document.getElementById('resR1').checked = n === '1';
+    document.getElementById('resR2').checked = n === '2';
+  }
+
+  async function resOnDateChange() {
+    const date = document.getElementById('res_date').value;
+    if (!date) return;
+    document.getElementById('res_time').innerHTML = '<option value="">Loading…</option>';
+    try { resCachedReservations = await getReservations('date=eq.' + date); }
+    catch (e) { resCachedReservations = []; }
+    resPopulateTimeDropdown(date);
+    resRenderAvailPreview(date);
+  }
+
+  function resPopulateTimeDropdown(date) {
+    const dur = parseFloat(document.getElementById('res_dur').value || 1);
+    const sel = document.getElementById('res_time');
+    sel.innerHTML = '<option value="">— select a time —</option>';
+    RES_TIMES.forEach(t => {
+      const end = resTimeToMin(t) + dur * 60;
+      if (end > resTimeToMin('10:00 PM') + 60) return;
+      const c1 = resHasConflict(resCachedReservations, date, '1', t, dur);
+      const c2 = resHasConflict(resCachedReservations, date, '2', t, dur);
+      const opt = document.createElement('option');
+      opt.value = t;
+      if (c1 && c2) { opt.textContent = t + ' — Both courts booked'; opt.disabled = true; }
+      else { opt.textContent = t + (c1 ? ' (Court 1 taken)' : '') + (c2 ? ' (Court 2 taken)' : ''); }
+      sel.appendChild(opt);
+    });
+  }
+
+  function resOnTimeChange() {
+    const date = document.getElementById('res_date').value;
+    const time = document.getElementById('res_time').value;
+    const dur = parseFloat(document.getElementById('res_dur').value || 1);
+    if (!date || !time) return;
+
+    const c1 = resHasConflict(resCachedReservations, date, '1', time, dur);
+    const c2 = resHasConflict(resCachedReservations, date, '2', time, dur);
+
+    const card1 = document.getElementById('resCard1'); const s1 = document.getElementById('resC1status');
+    if (c1) { card1.className = 'fn-court-card taken'; s1.textContent = '⛔ Taken by ' + c1.name; s1.style.color = '#991b1b'; if (resSelectedCourt === '1' && !c2) resSelectCourt('2'); }
+    else { card1.className = 'fn-court-card' + (resSelectedCourt === '1' ? ' selected' : ''); s1.textContent = '✓ Available'; s1.style.color = '#166534'; }
+
+    const card2 = document.getElementById('resCard2'); const s2 = document.getElementById('resC2status');
+    if (c2) { card2.className = 'fn-court-card taken'; s2.textContent = '⛔ Taken by ' + c2.name; s2.style.color = '#991b1b'; if (resSelectedCourt === '2' && !c1) resSelectCourt('1'); }
+    else { card2.className = 'fn-court-card' + (resSelectedCourt === '2' ? ' selected' : ''); s2.textContent = '✓ Available'; s2.style.color = '#166534'; }
+
+    const hint = document.getElementById('resTimeHint');
+    const submitBtn = document.getElementById('resSubmitBtn');
+    if (c1 && c2) { hint.textContent = '⛔ Both courts booked at this time — choose another.'; hint.style.color = '#991b1b'; submitBtn.disabled = true; }
+    else { hint.textContent = ''; submitBtn.disabled = false; }
+  }
+
+  function resSetErr(msg) {
+    document.getElementById('resBookErr').classList.add('show');
+    document.getElementById('resBookErrMsg').textContent = msg;
+  }
+  function resClearErr() { document.getElementById('resBookErr').classList.remove('show'); }
+  function resSetSuccess(msg) {
+    document.getElementById('resBookSuccess').classList.add('show');
+    document.getElementById('resBookSuccessMsg').textContent = msg;
+  }
+
+  async function resSubmit() {
+    resClearErr();
+    const fname = document.getElementById('res_fname').value.trim();
+    const lname = document.getElementById('res_lname').value.trim();
+    const email = document.getElementById('res_email').value.trim();
+    const addr = document.getElementById('res_addr').value.trim();
+    const date = document.getElementById('res_date').value;
+    const time = document.getElementById('res_time').value;
+    const dur = document.getElementById('res_dur').value;
+    const court = resSelectedCourt;
+
+    if (!fname || !lname) { resSetErr('Please enter your full name.'); return; }
+    if (!email || !email.includes('@')) { resSetErr('Please enter a valid email.'); return; }
+    if (!addr) { resSetErr('Please enter your street address.'); return; }
+    if (!date) { resSetErr('Please select a date.'); return; }
+    if (new Date(date + 'T12:00:00') < new Date(new Date().toDateString())) { resSetErr('Please select today or a future date.'); return; }
+    if (!time) { resSetErr('Please select a start time.'); return; }
+    if (!resIsConfigured) { resSetErr('Reservation system is not configured. Contact the site administrator.'); return; }
+
+    const btn = document.getElementById('resSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="fn-spinner"></span> Checking availability…';
+
+    try {
+      const fresh = await getReservations('date=eq.' + date + '&court_num=eq.' + court);
+      const conflict = resHasConflict(fresh, date, court, time, parseFloat(dur));
+      if (conflict) {
+        resSetErr('Court ' + court + ' was just booked for that time by ' + conflict.name + '. Please choose the other court or a different time.');
+        btn.disabled = false; btn.innerHTML = 'Submit Reservation Request';
+        resCachedReservations = await getReservations('date=eq.' + date);
+        resPopulateTimeDropdown(date);
+        resOnTimeChange();
+        return;
+      }
+
+      await insertReservation({
+        name: fname + ' ' + lname, email,
+        phone: document.getElementById('res_phone').value.trim(),
+        address: addr, date, time, duration: dur,
+        court: 'Court ' + court, court_num: court,
+        players: document.getElementById('res_players').value,
+        notes: document.getElementById('res_notes').value.trim(),
+        status: 'Confirmed'
+      });
+
+      document.getElementById('resBookForm').style.display = 'none';
+      resSetSuccess('✓ Court ' + court + ' confirmed for ' + resFmtDate(date) + ' at ' + time + ' (' + dur + ' hour' + (parseFloat(dur) !== 1 ? 's' : '') + '). See you on the court!');
+      resRenderAvailPreview(date);
+    } catch (err) {
+      resSetErr('Error saving reservation: ' + err.message);
+      btn.disabled = false; btn.innerHTML = 'Book Court';
+    }
+  }
+
+  async function resRenderAvailPreview(date) {
+    const el = document.getElementById('resAvailPreview');
+    if (!date) date = resTodayISO();
+    el.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading…</div>';
+    let reservations = [];
+    try { reservations = await getReservations('date=eq.' + date); }
+    catch (e) { el.innerHTML = '<p style="font-size:13px;color:#991b1b">Could not load schedule.</p>'; return; }
+
+    let html = `<p style="font-size:11px;color:var(--text-muted);margin-bottom:.85rem">${resFmtDate(date)}</p>`;
+    ['1', '2'].forEach(court => {
+      const courtRes = reservations.filter(r => r.court_num === court && r.status !== 'Declined');
+      html += `<div style="margin-bottom:1rem"><div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--sage);margin-bottom:.4rem">Court ${court}</div><div class="fn-slots">`;
+      if (courtRes.length === 0) {
+        html += `<span class="fn-slot fn-slot-avail">All day open</span>`;
+      } else {
+        RES_TIMES.forEach(t => {
+          const m = resTimeToMin(t);
+          const hit = courtRes.find(r => m >= resTimeToMin(r.time) && m < resTimeToMin(r.time) + parseFloat(r.duration) * 60);
+          if (hit) {
+            const cls = hit.status === 'Pending' ? 'fn-slot-pending' : 'fn-slot-booked';
+            html += `<span class="fn-slot ${cls}" title="${hit.name} · ${hit.status}">${t}</span>`;
+          } else {
+            html += `<span class="fn-slot fn-slot-avail">${t}</span>`;
+          }
+        });
+      }
+      html += `</div></div>`;
+    });
+    el.innerHTML = html;
+  }
+
+  function resCalInit() { if (!document.getElementById('resCalDate').value) document.getElementById('resCalDate').value = resTodayISO(); }
+  function resCalToday() { document.getElementById('resCalDate').value = resTodayISO(); resRenderCalendar(); }
+  function resShiftCal(n) {
+    const el = document.getElementById('resCalDate');
+    const d = new Date((el.value || resTodayISO()) + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    el.value = d.toISOString().slice(0, 10);
+    resRenderCalendar();
+  }
+
+  async function resRenderCalendar() {
+    const date = document.getElementById('resCalDate').value || resTodayISO();
+    const calEl = document.getElementById('resCalView');
+    const upEl = document.getElementById('resUpcomingLog');
+    calEl.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading…</div>';
+    upEl.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading…</div>';
+
+    let all = [];
+    try { all = await getReservations(); }
+    catch (e) { calEl.innerHTML = '<p style="color:#991b1b;font-size:13px">Could not load data.</p>'; return; }
+
+    const dayRes = all.filter(r => r.date === date).sort((a, b) => resTimeToMin(a.time) - resTimeToMin(b.time));
+    let html = `<p style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:1rem">${resFmtDate(date)}</p>`;
+    if (dayRes.length === 0) {
+      html += `<div style="background:var(--sage-bg);border-radius:var(--radius);padding:1.25rem;text-align:center;font-size:13px;color:var(--text-muted)">No reservations on this date.</div>`;
+    } else {
+      html += `<div class="fn-day-grid">`;
+      ['1', '2'].forEach(c => {
+        html += `<div><div class="fn-court-col-title">Court ${c}</div>`;
+        const cr = dayRes.filter(r => r.court_num === c);
+        if (cr.length === 0) {
+          html += `<div class="fn-time-block fn-time-avail">✓ No bookings</div>`;
+        } else {
+          cr.forEach(r => {
+            const cls = r.status === 'Confirmed' ? 'fn-time-confirmed' : r.status === 'Declined' ? 'fn-time-declined' : 'fn-time-pending';
+            html += `<div class="fn-time-block ${cls}">
+              <div style="font-weight:600">${r.time} · ${r.duration}h</div>
+              <div style="font-size:12px">${r.name} · ${r.players} players</div>
+              <span class="fn-badge fn-badge-${r.status.toLowerCase()}">${r.status}</span>
+            </div>`;
+          });
+        }
+        html += `</div>`;
+      });
+      html += `</div>`;
+    }
+    calEl.innerHTML = html;
+
+    const today = resTodayISO();
+    const upcoming = all.filter(r => r.date >= today && r.status !== 'Declined')
+      .sort((a, b) => a.date === b.date ? resTimeToMin(a.time) - resTimeToMin(b.time) : a.date.localeCompare(b.date));
+
+    if (upcoming.length === 0) {
+      upEl.innerHTML = `<div class="fn-empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>No upcoming reservations</div>`;
+    } else {
+      upEl.innerHTML = `<table class="fn-table"><thead><tr><th>Date</th><th>Time</th><th>Court</th><th>Resident</th><th>Players</th><th>Status</th></tr></thead><tbody>` +
+        upcoming.map(r => {
+          const bc = r.status === 'Confirmed' ? 'fn-badge-confirmed' : r.status === 'Declined' ? 'fn-badge-declined' : 'fn-badge-pending';
+          return `<tr>
+            <td style="white-space:nowrap">${resFmtDate(r.date)}</td>
+            <td style="white-space:nowrap">${r.time}<br><span style="font-size:11px;color:var(--text-muted)">${r.duration}h</span></td>
+            <td>${r.court}</td><td><strong>${r.name}</strong></td>
+            <td style="text-align:center">${r.players}</td>
+            <td><span class="fn-badge ${bc}">${r.status}</span></td>
+          </tr>`;
+        }).join('') + `</tbody></table>`;
+    }
+  }
+
+  async function resAdminLogin() {
+    const email = document.getElementById('resAdminEmail').value.trim();
+    const pw = document.getElementById('resAdminPw').value;
+    const errEl = document.getElementById('resAdminLoginErr');
+    errEl.style.display = 'none';
+    if (!email || !pw) { errEl.textContent = 'Please enter your email and password.'; errEl.style.display = 'block'; return; }
+    try {
+      await adminSignIn(email, pw);
+      document.getElementById('resAdminLoginBox').style.display = 'none';
+      document.getElementById('resAdminDash').style.display = 'block';
+      resRefreshAdmin();
+    } catch(e) {
+      errEl.textContent = e.message; errEl.style.display = 'block';
+      document.getElementById('resAdminPw').value = '';
+    }
+  }
+  async function resAdminLogout() {
+    await adminSignOut();
+    adminHideAllDashboards();
+  }
+
+  async function resRefreshAdmin() {
+    const el = document.getElementById('resAdminLog');
+    el.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading…</div>';
+    let all = [];
+    try { all = await getReservations(); }
+    catch (e) { el.innerHTML = `<p style="color:#991b1b;font-size:13px">Error loading data: ${e.message}</p>`; return; }
+    if (all.length === 0) {
+      el.innerHTML = `<div class="fn-empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>No reservations yet</div>`;
+      return;
+    }
+    const colors = { Pending: '#854d0e', Confirmed: '#166534', Declined: '#991b1b' };
+    el.innerHTML = `<table class="fn-table"><thead><tr><th>Submitted</th><th>Date & Time</th><th>Court</th><th>Resident</th><th>Contact</th><th>Players</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>` +
+      all.map(r => `<tr>
+        <td style="white-space:nowrap;font-size:11px">${resFmtTS(r.submitted)}</td>
+        <td style="white-space:nowrap"><strong>${resFmtDate(r.date)}</strong><br>${r.time} · ${r.duration}h</td>
+        <td>${r.court}</td>
+        <td><strong>${r.name}</strong><br><span style="font-size:11px;color:var(--text-muted)">${r.address}</span></td>
+        <td style="font-size:11px">${r.email}${r.phone ? '<br>' + r.phone : ''}</td>
+        <td style="text-align:center">${r.players}</td>
+        <td style="font-size:11px;max-width:110px">${r.notes || '—'}</td>
+        <td><select class="fn-status-select" style="color:${colors[r.status] || '#333'}" onchange="resChangeStatus('${r.id}',this.value,this)">
+          <option${r.status === 'Pending' ? ' selected' : ''}>Pending</option>
+          <option${r.status === 'Confirmed' ? ' selected' : ''}>Confirmed</option>
+          <option${r.status === 'Declined' ? ' selected' : ''}>Declined</option>
+        </select></td>
+        <td><button class="btn btn-danger btn-sm" onclick="resRemove('${r.id}')">✕</button></td>
+      </tr>`).join('') + `</tbody></table>`;
+  }
+
+  async function resChangeStatus(id, status, sel) {
+    const colors = { Pending: '#854d0e', Confirmed: '#166534', Declined: '#991b1b' };
+    sel.style.color = colors[status] || '#333';
+    try { await updateReservationStatus(id, status); } catch (e) { alert('Error updating status: ' + e.message); }
+  }
+  async function resRemove(id) {
+    if (!confirm('Delete this reservation?')) return;
+    try { await deleteReservation(id); resRefreshAdmin(); } catch (e) { alert('Error deleting: ' + e.message); }
+  }
+  async function resClearAllData() {
+    if (!confirm('Delete ALL reservation data from the database? This cannot be undone.')) return;
+    try {
+      await sbFetch('reservations?id=neq.00000000-0000-0000-0000-000000000000', { method: 'DELETE', prefer: 'return=minimal' });
+      resRefreshAdmin();
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  // ═══════════════════════════════════════════════════
+  // DOCUMENT LIBRARY — Supabase Storage + metadata table
+  // ═══════════════════════════════════════════════════
+  const docsIsConfigured = SUPABASE_URL && SUPABASE_URL.indexOf('supabase.co') > -1;
+  let docsCached = [];
+
+  if (!docsIsConfigured) {
+    const w = document.getElementById('docsConfigWarning');
+    if (w) w.classList.add('show');
+  }
+
+  function docsSwitchTab(id, btn) {
+    document.querySelectorAll('#page-documents .fn-tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#page-documents .fn-tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('docs-tab-' + id).classList.add('active');
+    if (btn) btn.classList.add('active');
+    if (id === 'admin') {
+      if (adminSession) {
+        document.getElementById('docsAdminLoginBox').style.display = 'none';
+        document.getElementById('docsAdminDash').style.display = 'block';
+        docsRefreshAdmin();
+      } else if (document.getElementById('docsAdminDash').style.display !== 'none') {
+        docsRefreshAdmin();
+      }
+    }
+  }
+
+  async function getDocuments() {
+    if (!docsIsConfigured) return [];
+    return sbFetch('documents?order=uploaded.desc');
+  }
+  async function insertDocument(data) {
+    return sbFetch('documents', { method: 'POST', body: JSON.stringify(data), prefer: 'return=representation' });
+  }
+  async function deleteDocumentRow(id) {
+    return sbFetch('documents?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' });
+  }
+
+  function docFmtDate(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function docFmtSize(kb) {
+    if (!kb) return '';
+    if (kb < 1024) return kb + ' KB';
+    return (kb / 1024).toFixed(1) + ' MB';
+  }
+  function docIconForCategory() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+  }
+
+  async function docsLoadAndRender() {
+    const el = document.getElementById('docsListContainer');
+    el.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading documents…</div>';
+    try { docsCached = await getDocuments(); }
+    catch (e) { el.innerHTML = `<p style="color:#991b1b;font-size:13px;text-align:center;padding:2rem">Could not load documents: ${e.message}</p>`; return; }
+    docsRender();
+  }
+
+  function docsRender() {
+    const el = document.getElementById('docsListContainer');
+    const search = (document.getElementById('docSearch').value || '').toLowerCase();
+    const cat = document.getElementById('docCategoryFilter').value;
+
+    let docs = docsCached.filter(d => d.title.toLowerCase().includes(search));
+    if (cat) docs = docs.filter(d => d.category === cat);
+
+    if (docs.length === 0) {
+      el.innerHTML = `<div class="fn-empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${docsCached.length === 0 ? 'No documents have been uploaded yet.' : 'No documents match your search.'}</div>`;
+      return;
+    }
+
+    // Group by category, preserving a sensible order
+    const order = ['Governing Documents', 'Policies & Procedures', 'Meeting Minutes', 'Budget & Financial', 'Downloadable Forms'];
+    const grouped = {};
+    docs.forEach(d => { (grouped[d.category] = grouped[d.category] || []).push(d); });
+
+    let html = '';
+    const cats = cat ? [cat] : order.filter(c => grouped[c]);
+    cats.forEach(c => {
+      if (!grouped[c]) return;
+      html += `<div class="doc-category"><h3 class="doc-category-title">${docIconForCategory()}${c}</h3><div class="doc-list">`;
+      grouped[c].forEach(d => {
+        const url = sbPublicUrl('hoa-documents', d.file_path);
+        html += `<a href="${url}" target="_blank" class="doc-item">${docIconForCategory()}${d.title}<span class="doc-item-meta">${docFmtSize(d.file_size_kb)} · ${docFmtDate(d.uploaded)}</span></a>`;
+      });
+      html += `</div></div>`;
+    });
+    el.innerHTML = html;
+  }
+
+  async function docsAdminLogin() {
+    const email = document.getElementById('docsAdminEmail').value.trim();
+    const pw = document.getElementById('docsAdminPw').value;
+    const errEl = document.getElementById('docsAdminLoginErr');
+    errEl.style.display = 'none';
+    if (!email || !pw) { errEl.textContent = 'Please enter your email and password.'; errEl.style.display = 'block'; return; }
+    try {
+      await adminSignIn(email, pw);
+      document.getElementById('docsAdminLoginBox').style.display = 'none';
+      document.getElementById('docsAdminDash').style.display = 'block';
+      docsRefreshAdmin();
+    } catch(e) {
+      errEl.textContent = e.message; errEl.style.display = 'block';
+      document.getElementById('docsAdminPw').value = '';
+    }
+  }
+  async function docsAdminLogout() {
+    await adminSignOut();
+    adminHideAllDashboards();
+  }
+
+  function docSetUploadErr(msg) {
+    document.getElementById('docUploadErr').classList.add('show');
+    document.getElementById('docUploadErrMsg').textContent = msg;
+  }
+  function docClearUploadErr() { document.getElementById('docUploadErr').classList.remove('show'); }
+  function docSetUploadSuccess(msg) {
+    document.getElementById('docUploadSuccess').classList.add('show');
+    document.getElementById('docUploadSuccessMsg').textContent = msg;
+  }
+
+  async function docsUpload() {
+    docClearUploadErr();
+    document.getElementById('docUploadSuccess').classList.remove('show');
+    const title = document.getElementById('docTitle').value.trim();
+    const category = document.getElementById('docCategory').value;
+    const fileInput = document.getElementById('docFile');
+    const file = fileInput.files[0];
+
+    if (!title) { docSetUploadErr('Please enter a document title.'); return; }
+    if (!category) { docSetUploadErr('Please select a category.'); return; }
+    if (!file) { docSetUploadErr('Please choose a file to upload.'); return; }
+    if (!docsIsConfigured) { docSetUploadErr('Document storage is not configured. Contact the site administrator.'); return; }
+
+    const btn = document.getElementById('docUploadBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="fn-spinner"></span> Uploading…';
+
+    try {
+      const ext = file.name.split('.').pop();
+      const safeName = Date.now() + '-' + file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      await sbUpload('hoa-documents', safeName, file);
+
+      await insertDocument({
+        title, category, file_path: safeName,
+        file_size_kb: Math.round(file.size / 1024),
+        uploaded_by: 'Board Admin'
+      });
+
+      docSetUploadSuccess('✓ "' + title + '" uploaded successfully.');
+      document.getElementById('docTitle').value = '';
+      document.getElementById('docCategory').value = '';
+      fileInput.value = '';
+      docsRefreshAdmin();
+    } catch (err) {
+      docSetUploadErr('Upload failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Upload Document';
+    }
+  }
+
+  async function docsRefreshAdmin() {
+    const el = document.getElementById('docsAdminList');
+    el.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading…</div>';
+    let docs = [];
+    try { docs = await getDocuments(); }
+    catch (e) { el.innerHTML = `<p style="color:#991b1b;font-size:13px">Error: ${e.message}</p>`; return; }
+    docsCached = docs;
+    if (docs.length === 0) {
+      el.innerHTML = `<div class="fn-empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>No documents uploaded yet</div>`;
+      return;
+    }
+    el.innerHTML = docs.map(d => {
+      const url = sbPublicUrl('hoa-documents', d.file_path);
+      return `<div class="fn-doc-row">
+        ${docIconForCategory()}
+        <a href="${url}" target="_blank">${d.title}</a>
+        <span class="fn-doc-meta">${d.category} · ${docFmtSize(d.file_size_kb)} · ${docFmtDate(d.uploaded)}</span>
+        <button class="fn-doc-del" onclick="docsDelete('${d.id}','${d.file_path}')" title="Delete">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  async function docsDelete(id, filePath) {
+    if (!confirm('Delete this document? This cannot be undone.')) return;
+    try {
+      await deleteDocumentRow(id);
+      await sbDeleteFile('hoa-documents', filePath);
+      docsRefreshAdmin();
+    } catch (e) { alert('Error deleting: ' + e.message); }
+  }
+
+  // ═══════════════════════════════════════════════════
+  // NEWS & ANNOUNCEMENTS — Supabase-backed, shown on Home + News
+  // ═══════════════════════════════════════════════════
+  const newsIsConfigured = SUPABASE_URL && SUPABASE_URL.indexOf('supabase.co') > -1;
+  let newsCached = [];
+
+  if (!newsIsConfigured) {
+    const w = document.getElementById('newsConfigWarning');
+    if (w) w.classList.add('show');
+  }
+
+  function newsSwitchTab(id, btn) {
+    document.querySelectorAll('#page-news .fn-tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#page-news .fn-tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('news-tab-' + id).classList.add('active');
+    if (btn) btn.classList.add('active');
+    if (id === 'admin') {
+      if (adminSession) {
+        document.getElementById('newsAdminLoginBox').style.display = 'none';
+        document.getElementById('newsAdminDash').style.display = 'block';
+        newsRefreshAdmin();
+      } else if (document.getElementById('newsAdminDash').style.display !== 'none') {
+        newsRefreshAdmin();
+      }
+    }
+  }
+
+  async function getAnnouncements() {
+    if (!newsIsConfigured) return [];
+    return sbFetch('announcements?order=post_date.desc,created.desc');
+  }
+  async function insertAnnouncement(data) {
+    return sbFetch('announcements', { method: 'POST', body: JSON.stringify(data), prefer: 'return=representation' });
+  }
+  async function updateAnnouncement(id, data) {
+    return sbFetch('announcements?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' });
+  }
+  async function deleteAnnouncementRow(id) {
+    return sbFetch('announcements?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' });
+  }
+
+  function newsBadgeClass(cat) {
+    const map = {
+      'Meeting Notice': 'badge-amber', 'Pool Update': 'badge-sage', 'Community': 'badge-navy',
+      'Reminder': 'badge-amber', 'Board Update': 'badge-navy', 'Community Event': 'badge-sage'
+    };
+    return map[cat] || 'badge-navy';
+  }
+  function newsFmtDayMonth(iso) {
+    const d = new Date(iso + 'T12:00:00');
+    return { day: String(d.getDate()).padStart(2, '0'), month: d.toLocaleDateString('en-US', { month: 'short' }) };
+  }
+  function newsFmtFull(iso) {
+    const d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  }
+
+  function newsRenderItem(a) {
+    const dm = newsFmtDayMonth(a.post_date);
+    return `<div class="announcement-item">
+      <div class="announcement-date"><span class="day">${dm.day}</span><span class="month">${dm.month}</span></div>
+      <div class="announcement-content">
+        <span class="badge ${newsBadgeClass(a.category)}">${a.category}</span>
+        <h4>${a.title}</h4>
+        <p>${a.body}</p>
+      </div>
+    </div>`;
+  }
+
+  async function newsLoadHome() {
+    const el = document.getElementById('homeAnnouncementsList');
+    if (!el) return;
+    try {
+      newsCached = await getAnnouncements();
+      const recent = newsCached.slice(0, 4);
+      if (recent.length === 0) {
+        el.innerHTML = `<div class="fn-empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/></svg>No announcements posted yet.</div>`;
+      } else {
+        el.innerHTML = recent.map(newsRenderItem).join('');
+      }
+    } catch (e) {
+      el.innerHTML = `<p style="color:#991b1b;font-size:13px;text-align:center">Could not load announcements.</p>`;
+    }
+  }
+
+  async function newsLoadFull() {
+    const el = document.getElementById('newsFullList');
+    if (!el) return;
+    el.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading announcements…</div>';
+    try {
+      newsCached = await getAnnouncements();
+      if (newsCached.length === 0) {
+        el.innerHTML = `<div class="fn-empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/></svg>No announcements posted yet.</div>`;
+      } else {
+        el.innerHTML = newsCached.map(newsRenderItem).join('');
+      }
+    } catch (e) {
+      el.innerHTML = `<p style="color:#991b1b;font-size:13px;text-align:center;padding:2rem">Could not load announcements: ${e.message}</p>`;
+    }
+  }
+
+  async function newsAdminLogin() {
+    const email = document.getElementById('newsAdminEmail').value.trim();
+    const pw = document.getElementById('newsAdminPw').value;
+    const errEl = document.getElementById('newsAdminLoginErr');
+    errEl.style.display = 'none';
+    if (!email || !pw) { errEl.textContent = 'Please enter your email and password.'; errEl.style.display = 'block'; return; }
+    try {
+      await adminSignIn(email, pw);
+      document.getElementById('newsAdminLoginBox').style.display = 'none';
+      document.getElementById('newsAdminDash').style.display = 'block';
+      newsRefreshAdmin();
+    } catch(e) {
+      errEl.textContent = e.message; errEl.style.display = 'block';
+      document.getElementById('newsAdminPw').value = '';
+    }
+  }
+  async function newsAdminLogout() {
+    await adminSignOut();
+    adminHideAllDashboards();
+  }
+
+  function newsSetErr(msg) {
+    document.getElementById('newsFormErr').classList.add('show');
+    document.getElementById('newsFormErrMsg').textContent = msg;
+  }
+  function newsClearErr() { document.getElementById('newsFormErr').classList.remove('show'); }
+  function newsSetSuccess(msg) {
+    document.getElementById('newsFormSuccess').classList.add('show');
+    document.getElementById('newsFormSuccessMsg').textContent = msg;
+    setTimeout(() => document.getElementById('newsFormSuccess').classList.remove('show'), 4000);
+  }
+
+  function newsResetForm() {
+    document.getElementById('newsEditId').value = '';
+    document.getElementById('newsDate').value = newsTodayISO();
+    document.getElementById('newsCategory').value = 'Community';
+    document.getElementById('newsTitle').value = '';
+    document.getElementById('newsBody').value = '';
+    document.getElementById('newsFormTitle').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Post a New Announcement';
+    document.getElementById('newsSubmitBtn').textContent = 'Post Announcement';
+    document.getElementById('newsCancelEditBtn').style.display = 'none';
+    newsClearErr();
+  }
+
+  function newsCancelEdit() { newsResetForm(); }
+
+  function newsTodayISO() { return new Date().toISOString().slice(0, 10); }
+
+  async function newsSubmit() {
+    newsClearErr();
+    const editId = document.getElementById('newsEditId').value;
+    const date = document.getElementById('newsDate').value;
+    const category = document.getElementById('newsCategory').value;
+    const title = document.getElementById('newsTitle').value.trim();
+    const body = document.getElementById('newsBody').value.trim();
+
+    if (!date) { newsSetErr('Please select a date.'); return; }
+    if (!title) { newsSetErr('Please enter a title.'); return; }
+    if (!body) { newsSetErr('Please write the announcement body.'); return; }
+    if (!newsIsConfigured) { newsSetErr('News system is not configured. Contact the site administrator.'); return; }
+
+    const btn = document.getElementById('newsSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="fn-spinner"></span> Saving…';
+
+    try {
+      const data = { post_date: date, category, title, body };
+      if (editId) {
+        await updateAnnouncement(editId, data);
+        newsSetSuccess('✓ Announcement updated.');
+      } else {
+        await insertAnnouncement(data);
+        newsSetSuccess('✓ Announcement posted.');
+      }
+      newsResetForm();
+      newsRefreshAdmin();
+      newsLoadFull();
+      newsLoadHome();
+    } catch (err) {
+      newsSetErr('Error saving: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = editId ? 'Save Changes' : 'Post Announcement';
+    }
+  }
+
+  function newsEditStart(a) {
+    document.getElementById('newsEditId').value = a.id;
+    document.getElementById('newsDate').value = a.post_date;
+    document.getElementById('newsCategory').value = a.category;
+    document.getElementById('newsTitle').value = a.title;
+    document.getElementById('newsBody').value = a.body;
+    document.getElementById('newsFormTitle').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit Announcement';
+    document.getElementById('newsSubmitBtn').textContent = 'Save Changes';
+    document.getElementById('newsCancelEditBtn').style.display = 'inline-flex';
+    newsClearErr();
+    document.getElementById('newsFormTitle').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function newsDeletePost(id) {
+    if (!confirm('Delete this announcement? This cannot be undone.')) return;
+    try {
+      await deleteAnnouncementRow(id);
+      newsRefreshAdmin();
+      newsLoadFull();
+      newsLoadHome();
+    } catch (e) { alert('Error deleting: ' + e.message); }
+  }
+
+  async function newsRefreshAdmin() {
+    const el = document.getElementById('newsAdminList');
+    el.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading…</div>';
+    let all = [];
+    try { all = await getAnnouncements(); }
+    catch (e) { el.innerHTML = `<p style="color:#991b1b;font-size:13px">Error: ${e.message}</p>`; return; }
+    newsCached = all;
+    if (all.length === 0) {
+      el.innerHTML = `<div class="fn-empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/></svg>No announcements posted yet</div>`;
+      return;
+    }
+    el.innerHTML = `<table class="fn-table"><thead><tr><th>Date</th><th>Category</th><th>Title</th><th>Body</th><th></th></tr></thead><tbody>` +
+      all.map(a => `<tr>
+        <td style="white-space:nowrap">${newsFmtFull(a.post_date)}</td>
+        <td><span class="badge ${newsBadgeClass(a.category)}">${a.category}</span></td>
+        <td><strong>${a.title}</strong></td>
+        <td style="font-size:11px;max-width:220px">${a.body.length > 90 ? a.body.slice(0, 90) + '…' : a.body}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick='newsEditStart(${JSON.stringify(a).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="newsDeletePost('${a.id}')">✕</button>
+        </td>
+      </tr>`).join('') + `</tbody></table>`;
+  }
+
+  // ═══════════════════════════════════════════════════
+  // BOARD MEMBERS — Supabase-backed
+  // ═══════════════════════════════════════════════════
+  const boardIsConfigured = SUPABASE_URL && SUPABASE_URL.indexOf('supabase.co') > -1;
+  let boardCached = [];
+
+  if (!boardIsConfigured) {
+    const w = document.getElementById('boardConfigWarning');
+    if (w) w.classList.add('show');
+  }
+
+  function boardSwitchTab(id, btn) {
+    document.querySelectorAll('#page-board .fn-tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#page-board .fn-tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('board-tab-' + id).classList.add('active');
+    if (btn) btn.classList.add('active');
+    if (id === 'admin') {
+      if (adminSession) {
+        document.getElementById('boardAdminLoginBox').style.display = 'none';
+        document.getElementById('boardAdminDash').style.display = 'block';
+        boardRefreshAdmin();
+      } else if (document.getElementById('boardAdminDash').style.display !== 'none') {
+        boardRefreshAdmin();
+      }
+    }
+  }
+
+  async function getBoardMembers() {
+    if (!boardIsConfigured) return [];
+    return sbFetch('board_members?order=sort_order.asc,created.asc');
+  }
+  async function insertBoardMember(data) {
+    return sbFetch('board_members', { method: 'POST', body: JSON.stringify(data), prefer: 'return=representation' });
+  }
+  async function updateBoardMember(id, data) {
+    return sbFetch('board_members?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data), prefer: 'return=minimal' });
+  }
+  async function deleteBoardMemberRow(id) {
+    return sbFetch('board_members?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' });
+  }
+
+  function boardInitials(name) {
+    return name.trim().split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase();
+  }
+
+  function boardRenderCard(m) {
+    return `<div class="board-card">
+      <div class="board-avatar">${boardInitials(m.name)}</div>
+      <h4>${m.name}</h4>
+      <p class="board-position">${m.position}</p>
+      <p>${m.bio}</p>
+    </div>`;
+  }
+
+  async function boardLoadMembers() {
+    const el = document.getElementById('boardMembersList');
+    if (!el) return;
+    el.innerHTML = '<div class="fn-empty" style="grid-column:1/-1"><span class="fn-spinner"></span>Loading board members…</div>';
+    try {
+      boardCached = await getBoardMembers();
+      if (boardCached.length === 0) {
+        el.innerHTML = `<div class="fn-empty" style="grid-column:1/-1"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>No board members have been added yet.</div>`;
+      } else {
+        el.innerHTML = boardCached.map(boardRenderCard).join('');
+      }
+    } catch (e) {
+      el.innerHTML = `<p style="color:#991b1b;font-size:13px;text-align:center;grid-column:1/-1">Could not load board members: ${e.message}</p>`;
+    }
+  }
+
+  async function boardAdminLogin() {
+    const email = document.getElementById('boardAdminEmail').value.trim();
+    const pw = document.getElementById('boardAdminPw').value;
+    const errEl = document.getElementById('boardAdminLoginErr');
+    errEl.style.display = 'none';
+    if (!email || !pw) { errEl.textContent = 'Please enter your email and password.'; errEl.style.display = 'block'; return; }
+    try {
+      await adminSignIn(email, pw);
+      document.getElementById('boardAdminLoginBox').style.display = 'none';
+      document.getElementById('boardAdminDash').style.display = 'block';
+      boardRefreshAdmin();
+    } catch(e) {
+      errEl.textContent = e.message; errEl.style.display = 'block';
+      document.getElementById('boardAdminPw').value = '';
+    }
+  }
+  async function boardAdminLogout() {
+    await adminSignOut();
+    adminHideAllDashboards();
+  }
+
+  function boardSetErr(msg) {
+    document.getElementById('boardFormErr').classList.add('show');
+    document.getElementById('boardFormErrMsg').textContent = msg;
+  }
+  function boardClearErr() { document.getElementById('boardFormErr').classList.remove('show'); }
+  function boardSetSuccess(msg) {
+    document.getElementById('boardFormSuccess').classList.add('show');
+    document.getElementById('boardFormSuccessMsg').textContent = msg;
+    setTimeout(() => document.getElementById('boardFormSuccess').classList.remove('show'), 4000);
+  }
+
+  function boardResetForm() {
+    document.getElementById('boardEditId').value = '';
+    document.getElementById('boardMemberName').value = '';
+    document.getElementById('boardMemberPosition').value = '';
+    document.getElementById('boardMemberBio').value = '';
+    document.getElementById('boardMemberSortOrder').value = '0';
+    document.getElementById('boardFormTitle').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Add a Board Member';
+    document.getElementById('boardSubmitBtn').textContent = 'Add Member';
+    document.getElementById('boardCancelEditBtn').style.display = 'none';
+    boardClearErr();
+  }
+
+  function boardCancelEdit() { boardResetForm(); }
+
+  async function boardSubmit() {
+    boardClearErr();
+    const editId = document.getElementById('boardEditId').value;
+    const name = document.getElementById('boardMemberName').value.trim();
+    const position = document.getElementById('boardMemberPosition').value.trim();
+    const bio = document.getElementById('boardMemberBio').value.trim();
+    const sortOrder = parseInt(document.getElementById('boardMemberSortOrder').value || '0', 10);
+
+    if (!name) { boardSetErr('Please enter the member\'s name.'); return; }
+    if (!position) { boardSetErr('Please enter the member\'s position/role.'); return; }
+    if (!bio) { boardSetErr('Please enter a brief bio.'); return; }
+    if (!boardIsConfigured) { boardSetErr('Board management is not configured. Contact the site administrator.'); return; }
+
+    const btn = document.getElementById('boardSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="fn-spinner"></span> Saving…';
+
+    try {
+      const data = { name, position, bio, sort_order: sortOrder };
+      if (editId) {
+        await updateBoardMember(editId, data);
+        boardSetSuccess('✓ Board member updated.');
+      } else {
+        await insertBoardMember(data);
+        boardSetSuccess('✓ Board member added.');
+      }
+      boardResetForm();
+      boardRefreshAdmin();
+      boardLoadMembers();
+    } catch (err) {
+      boardSetErr('Error saving: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = editId ? 'Save Changes' : 'Add Member';
+    }
+  }
+
+  function boardEditStart(m) {
+    document.getElementById('boardEditId').value = m.id;
+    document.getElementById('boardMemberName').value = m.name;
+    document.getElementById('boardMemberPosition').value = m.position;
+    document.getElementById('boardMemberBio').value = m.bio;
+    document.getElementById('boardMemberSortOrder').value = m.sort_order || 0;
+    document.getElementById('boardFormTitle').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit Board Member';
+    document.getElementById('boardSubmitBtn').textContent = 'Save Changes';
+    document.getElementById('boardCancelEditBtn').style.display = 'inline-flex';
+    boardClearErr();
+    document.getElementById('boardFormTitle').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function boardDeleteMember(id) {
+    if (!confirm('Remove this board member? This cannot be undone.')) return;
+    try {
+      await deleteBoardMemberRow(id);
+      boardRefreshAdmin();
+      boardLoadMembers();
+    } catch (e) { alert('Error deleting: ' + e.message); }
+  }
+
+  async function boardRefreshAdmin() {
+    const el = document.getElementById('boardAdminList');
+    el.innerHTML = '<div class="fn-empty"><span class="fn-spinner"></span>Loading…</div>';
+    let all = [];
+    try { all = await getBoardMembers(); }
+    catch (e) { el.innerHTML = `<p style="color:#991b1b;font-size:13px">Error: ${e.message}</p>`; return; }
+    boardCached = all;
+    if (all.length === 0) {
+      el.innerHTML = `<div class="fn-empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>No board members added yet</div>`;
+      return;
+    }
+    el.innerHTML = `<table class="fn-table"><thead><tr><th>Order</th><th>Name</th><th>Position</th><th>Bio</th><th></th></tr></thead><tbody>` +
+      all.map(m => `<tr>
+        <td style="text-align:center">${m.sort_order ?? 0}</td>
+        <td><strong>${m.name}</strong></td>
+        <td>${m.position}</td>
+        <td style="font-size:11px;max-width:220px">${m.bio.length > 80 ? m.bio.slice(0, 80) + '…' : m.bio}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick='boardEditStart(${JSON.stringify(m).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="boardDeleteMember('${m.id}')">✕</button>
+        </td>
+      </tr>`).join('') + `</tbody></table>`;
+  }
+
+  // ═══ INIT ═══
+  document.addEventListener('DOMContentLoaded', () => {
+    const today = resTodayISO();
+    const rd = document.getElementById('res_date');
+    if (rd) { rd.value = today; rd.min = today; }
+    const cd = document.getElementById('resCalDate');
+    if (cd) cd.value = today;
+    resRenderAvailPreview(today);
+    docsLoadAndRender();
+
+    const nd = document.getElementById('newsDate');
+    if (nd) nd.value = newsTodayISO();
+    newsLoadHome();
+    newsLoadFull();
+    boardLoadMembers();
+  });
+</script>
+
+</body>
+</html>
